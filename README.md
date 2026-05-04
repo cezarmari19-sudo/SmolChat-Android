@@ -1,4 +1,4 @@
-<img src="resources/app_icon/icon.png" alt="app icon" width="256"/>
+ <img src="resources/app_icon/icon.png" alt="app icon" width="256"/>
 
 # SmolChat - On-Device Inference of SLMs in Android
 
