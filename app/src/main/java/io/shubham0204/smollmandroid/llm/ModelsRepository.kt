@@ -61,4 +61,17 @@ class ModelsRepository(private val context: Context, private val appDB: AppDB) {
     fun isSpeech2TextModelDownloaded(asrModel: ASRModel): Boolean {
         return File(context.filesDir, asrModel.name).exists()
     }
+fun getRecommendedModelUrl(context: Context): String {
+    val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+    val memoryInfo = android.app.ActivityManager.MemoryInfo()
+    activityManager.getMemoryInfo(memoryInfo)
+    val totalRamGb = memoryInfo.totalMem / (1024.0 * 1024.0 * 1024.0)
+
+    return when {
+        totalRamGb >= 8.0 -> "https://huggingface.co/bartowski/Llama-3.2-8B-Instruct-GGUF/resolve/main/Llama-3.2-8B-Instruct-Q4_K_M.gguf"
+        totalRamGb >= 6.0 -> "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q8_0.gguf"
+        totalRamGb >= 4.0 -> "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf"
+        else -> "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf"
+    }
+}
 }
