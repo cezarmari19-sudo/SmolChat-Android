@@ -74,35 +74,22 @@ fun PopularModelsList(selectedModelIndex: Int?, onModelSelected: (Int) -> Unit) 
 
 fun getPopularModel(index: Int?): LLMModel? = if (index != null) popularModelsList[index] else null
 
-/**
- * A list of models that are shown in the DownloadModelActivity for the user to quickly get started
- * by downloading a model.
- */
 private val popularModelsList =
     listOf(
         LLMModel(
-            name = "SmolLM2 360M Instruct GGUF",
-            url =
-                "https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct-GGUF/resolve/main/smollm2-360m-instruct-q8_0.gguf",
+            name = "Llama 3.2 1B Q4 (sub 3GB RAM)",
+            url = "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf",
         ),
         LLMModel(
-            name = "SmolLM2 1.7B Instruct GGUF",
-            url =
-                "https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B-Instruct-GGUF/resolve/main/smollm2-1.7b-instruct-q4_k_m.gguf",
+            name = "Llama 3.2 3B Q4 (3-5GB RAM)",
+            url = "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf",
         ),
         LLMModel(
-            name = "Qwen2.5 1.5B Q8 Instruct GGUF",
-            url =
-                "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q8_0.gguf",
+            name = "Llama 3.2 3B Q8 (6-8GB RAM)",
+            url = "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q8_0.gguf",
         ),
         LLMModel(
-            name = "Qwen2.5 3B Q5_K_M Instruct GGUF",
-            url =
-                "https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q5_k_m.gguf",
-        ),
-        LLMModel(
-            name = "Qwen2.5 Coder 3B Instruct Q5 GGUF",
-            url =
-                "https://huggingface.co/Qwen/Qwen2.5-Coder-3B-Instruct-GGUF/resolve/main/qwen2.5-coder-3b-instruct-q5_0.gguf",
+            name = "Llama 3.2 8B Q4 (8GB+ RAM)",
+            url = "https://huggingface.co/bartowski/Llama-3.2-8B-Instruct-GGUF/resolve/main/Llama-3.2-8B-Instruct-Q4_K_M.gguf",
         ),
     )
