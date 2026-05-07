@@ -140,4 +140,149 @@ class DownloadModelActivity : ComponentActivity() {
                                 viewModel.fetchModelInfoAndTree(
                                     modelId,
                                     onResult = { modelInfo, modelFiles ->
-                                        hideProgress
+                                        hideProgressDialog()
+                                        navController.navigate(
+                                            ViewModelRoute(modelId, modelInfo, modelFiles)
+                                        )
+                                    },
+                                )
+                            },
+                        )
+                    }
+                    composable<DownloadModelRoute> {
+                        AutoDownloadScreen()
+                    }
+                }
+            }
+        }
+    }
+
+    @Composable
+    private fun AutoDownloadScreen() {
+        val modelName = getRecommendedModelName()
+        val modelUrl = getRecommendedModelUrl()
+        var downloadStarted by remember { mutableStateOf(false) }
+
+        SmolLMAndroidTheme {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier.padding(24.dp)
+                ) {
+                    Text(
+                        text = "AstranAi",
+                        style = androidx.compose.material3.MaterialTheme.typography.headlineLarge
+                    )
+                    Text(
+                        text = "Model recomandat pentru telefonul tău:",
+                        style = androidx.compose.material3.MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        text = modelName,
+                        style = androidx.compose.material3.MaterialTheme.typography.bodyLarge
+                    )
+                    if (!downloadStarted) {
+                        Button(onClick = {
+                            downloadStarted = true
+                            viewModel.downloadModelFromUrl(modelUrl)
+                        }) {
+                            Text("Descarcă și începe")
+                        }
+                    } else {
+                        Text("Se descarcă... verifică bara de notificări!")
+                        Button(onClick = { openChatActivity() }) {
+                            Text("Deschide aplicația")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun openChatActivity() {
+        if (openChatScreen) {
+            Intent(this, ChatActivity::class.java).apply {
+                startActivity(this)
+                finish()
+            }
+        } else {
+            finish()
+        }
+    }
+
+    private enum class AddNewModelStep {
+        ImportModel,
+        DownloadModel,
+    }
+
+    @OptIn(ExperimentalMaterial3Api::class)
+    @Composable
+    private fun AddNewModelScreen(onHFModelSelectClick: () -> Unit) {
+        var addNewModelStep by remember { mutableStateOf(AddNewModelStep.DownloadModel) }
+        SmolLMAndroidTheme {
+            Scaffold(
+                modifier = Modifier.fillMaxSize(),
+                topBar = {
+                    TopAppBar(
+                        title = { AppBarTitleText(stringResource(R.string.add_new_model_title)) }
+                    )
+                },
+            ) { innerPadding ->
+                Surface(
+                    modifier = Modifier
+                        .padding(innerPadding)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    when (addNewModelStep) {
+                        AddNewModelStep.ImportModel -> {
+                            ImportModelScreen(
+                                onPrevSectionClick = {
+                                    addNewModelStep = AddNewModelStep.DownloadModel
+                                },
+                                checkGGUFFile = ::checkGGUFFile,
+                                copyModelFile = { modelFileUri ->
+                                    viewModel.copyModelFile(
+                                        modelFileUri,
+                                        onComplete = { openChatActivity() },
+                                    )
+                                },
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(8.dp),
+                            )
+                        }
+                        AddNewModelStep.DownloadModel -> {
+                            DownloadModelScreen(
+                                onHFModelSelectClick = onHFModelSelectClick,
+                                onNextSectionClick = {
+                                    addNewModelStep = AddNewModelStep.ImportModel
+                                },
+                                onDownloadModelClick = { selectedPopularModelIndex ->
+                                    viewModel.downloadModelFromIndex(selectedPopularModelIndex)
+                                },
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(8.dp),
+                            )
+                        }
+                    }
+                }
+                AppProgressDialog()
+                AppAlertDialog()
+            }
+        }
+    }
+
+    private fun checkGGUFFile(uri: Uri): Boolean {
+        contentResolver.openInputStream(uri)?.use { inputStream ->
+            val ggufMagicNumberBytes = ByteArray(4)
+            inputStream.read(ggufMagicNumberBytes)
+            return ggufMagicNumberBytes.contentEquals(byteArrayOf(71, 71, 85, 70))
+        }
+        return false
+    }
+}
