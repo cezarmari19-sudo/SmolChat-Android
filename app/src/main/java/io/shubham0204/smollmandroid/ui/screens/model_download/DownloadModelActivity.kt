@@ -10,13 +10,15 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -24,16 +26,14 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -83,122 +83,36 @@ class DownloadModelActivity : ComponentActivity() {
         }
     }
 
-    private fun getRecommendedModelName(): String {
-        val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-        val memoryInfo = ActivityManager.MemoryInfo()
-        activityManager.getMemoryInfo(memoryInfo)
-        val totalRamGb = memoryInfo.totalMem / (1024.0 * 1024.0 * 1024.0)
-        return when {
-            totalRamGb >= 8.0 -> "Llama 3.2 8B Q4 (recomandat pentru ${totalRamGb.toInt()}GB RAM)"
-            totalRamGb >= 6.0 -> "Llama 3.2 3B Q8 (recomandat pentru ${totalRamGb.toInt()}GB RAM)"
-            totalRamGb >= 4.0 -> "Llama 3.2 3B Q4 (recomandat pentru ${totalRamGb.toInt()}GB RAM)"
-            else -> "Llama 3.2 1B Q4 (recomandat pentru ${totalRamGb.toInt()}GB RAM)"
-        }
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         openChatScreen = intent.extras?.getBoolean("openChatScreen") ?: true
 
         setContent {
-            val navController = rememberNavController()
-            Box(modifier = Modifier.safeDrawingPadding()) {
-                NavHost(
-                    navController = navController,
-                    startDestination = DownloadModelRoute,
-                    enterTransition = { fadeIn() },
-                    exitTransition = { fadeOut() },
-                ) {
-                    composable<ViewModelRoute>(
-                        typeMap =
-                            mapOf(
-                                typeOf<HFModelInfo.ModelInfo>() to
-                                        CustomNavTypes.HFModelInfoNavType,
-                                typeOf<List<HFModelTree.HFModelFile>>() to
-                                        CustomNavTypes.HFModelFileNavType,
-                            )
-                    ) { backStackEntry ->
-                        val route: ViewModelRoute = backStackEntry.toRoute()
-                        ViewHFModelScreen(
-                            route.modelId,
-                            route.modelInfo,
-                            route.modelFiles,
-                            onDownloadModel = { modelUrl ->
-                                viewModel.downloadModelFromUrl(modelUrl)
-                            },
-                            onBackClicked = { navController.navigateUp() },
-                        )
-                    }
-                    composable<HfModelSelectRoute> {
-                        HFModelDownloadScreen(
-                            viewModel,
-                            onBackClicked = { navController.navigateUp() },
-                            onModelClick = { modelId ->
-                                setProgressDialogTitle("Getting Model Data")
-                                showProgressDialog()
-                                viewModel.fetchModelInfoAndTree(
-                                    modelId,
-                                    onResult = { modelInfo, modelFiles ->
-                                        hideProgressDialog()
-                                        navController.navigate(
-                                            ViewModelRoute(modelId, modelInfo, modelFiles)
-                                        )
-                                    },
-                                )
-                            },
-                        )
-                    }
-                    composable<DownloadModelRoute> {
-                        AutoDownloadScreen()
-                    }
-                }
+            SmolLMAndroidTheme {
+                AutoDownloadScreen()
             }
         }
     }
 
     @Composable
     private fun AutoDownloadScreen() {
-        val modelName = getRecommendedModelName()
-        val modelUrl = getRecommendedModelUrl()
-        var downloadStarted by remember { mutableStateOf(false) }
+        LaunchedEffect(Unit) {
+            val modelUrl = getRecommendedModelUrl()
+            viewModel.downloadModelFromUrl(modelUrl)
+            openChatActivity()
+        }
 
-        SmolLMAndroidTheme {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                    modifier = Modifier.padding(24.dp)
-                ) {
-                    Text(
-                        text = "AstranAi",
-                        style = androidx.compose.material3.MaterialTheme.typography.headlineLarge
-                    )
-                    Text(
-                        text = "Model recomandat pentru telefonul tău:",
-                        style = androidx.compose.material3.MaterialTheme.typography.bodyMedium
-                    )
-                    Text(
-                        text = modelName,
-                        style = androidx.compose.material3.MaterialTheme.typography.bodyLarge
-                    )
-                    if (!downloadStarted) {
-                        Button(onClick = {
-                            downloadStarted = true
-                            viewModel.downloadModelFromUrl(modelUrl)
-                        }) {
-                            Text("Descarcă și începe")
-                        }
-                    } else {
-                        Text("Se descarcă... verifică bara de notificări!")
-                        Button(onClick = { openChatActivity() }) {
-                            Text("Deschide aplicația")
-                        }
-                    }
-                }
+                CircularProgressIndicator()
+                Text("Se pregătește AstranAi...")
             }
         }
     }
