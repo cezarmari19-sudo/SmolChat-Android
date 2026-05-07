@@ -1,21 +1,21 @@
 package io.shubham0204.smollmandroid.ui.screens.model_download
 
 import android.app.ActivityManager
+import android.app.DownloadManager
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
@@ -34,28 +34,85 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.rememberNavController
-import androidx.navigation.toRoute
+import androidx.core.content.ContextCompat
 import io.shubham0204.hf_model_hub_api.HFModelInfo
 import io.shubham0204.hf_model_hub_api.HFModelTree
+import io.shubham0204.smollm.GGUFReader
+import io.shubham0204.smollm.SmolLM
 import io.shubham0204.smollmandroid.R
 import io.shubham0204.smollmandroid.ui.components.AppAlertDialog
 import io.shubham0204.smollmandroid.ui.components.AppBarTitleText
 import io.shubham0204.smollmandroid.ui.components.AppProgressDialog
-import io.shubham0204.smollmandroid.ui.components.hideProgressDialog
-import io.shubham0204.smollmandroid.ui.components.setProgressDialogTitle
-import io.shubham0204.smollmandroid.ui.components.showProgressDialog
 import io.shubham0204.smollmandroid.ui.screens.chat.ChatActivity
 import io.shubham0204.smollmandroid.ui.theme.SmolLMAndroidTheme
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import org.koin.android.ext.android.inject
-import kotlin.reflect.typeOf
+import java.io.File
+import java.nio.file.Paths
 
 class DownloadModelActivity : ComponentActivity() {
     private var openChatScreen: Boolean = true
     private val viewModel: DownloadModelsViewModel by inject()
+    private var downloadId: Long = -1L
+
+    private val downloadReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L)
+            if (id == downloadId) {
+                // Descărcarea s-a terminat — înregistrăm modelul în baza de date
+                val downloadManager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                val query = DownloadManager.Query().setFilterById(id)
+                val cursor = downloadManager.query(query)
+                if (cursor.moveToFirst()) {
+                    val statusIndex = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
+                    val status = cursor.getInt(statusIndex)
+                    if (status == DownloadManager.STATUS_SUCCESSFUL) {
+                        val localUriIndex = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)
+                        val localUri = cursor.getString(localUriIndex)
+                        val file = File(Uri.parse(localUri).path!!)
+                        registerModelInDatabase(file)
+                    }
+                }
+                cursor.close()
+            }
+        }
+    }
+
+    private fun registerModelInDatabase(file: File) {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                // Copiem fișierul în directorul intern al aplicației
+                val destFile = File(filesDir, file.name)
+                file.copyTo(destFile, overwrite = true)
+
+                val ggufReader = GGUFReader()
+                ggufReader.load(destFile.absolutePath)
+                val contextSize = ggufReader.getContextSize() ?: SmolLM.DefaultInferenceParams.contextSize
+                val chatTemplate = ggufReader.getChatTemplate() ?: SmolLM.DefaultInferenceParams.chatTemplate
+
+                viewModel.appDB.addModel(
+                    destFile.name,
+                    "",
+                    Paths.get(filesDir.absolutePath, destFile.name).toString(),
+                    contextSize.toInt(),
+                    chatTemplate,
+                )
+
+                withContext(Dispatchers.Main) {
+                    openChatActivity()
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                withContext(Dispatchers.Main) {
+                    openChatActivity()
+                }
+            }
+        }
+    }
 
     @Serializable
     data class ViewModelRoute(
@@ -88,6 +145,14 @@ class DownloadModelActivity : ComponentActivity() {
         enableEdgeToEdge()
         openChatScreen = intent.extras?.getBoolean("openChatScreen") ?: true
 
+        // Înregistrăm receiver-ul pentru descărcare
+        ContextCompat.registerReceiver(
+            this,
+            downloadReceiver,
+            IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+
         setContent {
             SmolLMAndroidTheme {
                 AutoDownloadScreen()
@@ -95,12 +160,18 @@ class DownloadModelActivity : ComponentActivity() {
         }
     }
 
+    override fun onDestroy() {
+        super.onDestroy()
+        unregisterReceiver(downloadReceiver)
+    }
+
     @Composable
     private fun AutoDownloadScreen() {
         LaunchedEffect(Unit) {
             val modelUrl = getRecommendedModelUrl()
-            viewModel.downloadModelFromUrl(modelUrl)
-            openChatActivity()
+            // Salvăm downloadId ca să știm ce descărcare să urmărim
+            downloadId = viewModel.enqueueDownload(modelUrl)
+            // NU mai deschidem ChatActivity aici — așteptăm BroadcastReceiver
         }
 
         Box(
@@ -112,7 +183,8 @@ class DownloadModelActivity : ComponentActivity() {
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 CircularProgressIndicator()
-                Text("Se pregătește AstranAi...")
+                Text("Se descarcă modelul AI...")
+                Text("Poate dura câteva minute")
             }
         }
     }
