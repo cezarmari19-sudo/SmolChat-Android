@@ -83,7 +83,7 @@ fun PopularModelsList(selectedModelIndex: Int?, onModelSelected: (Int) -> Unit) 
                         )
                         if (isRecommended) {
                             Text(
-                                text = "⭐ Recomandat pentru telefonul tău",
+                                text = " Recomandat pentru telefonul tău",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.tertiary
                             )
