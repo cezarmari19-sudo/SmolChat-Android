@@ -61,20 +61,16 @@ class DownloadModelsViewModel(
         context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
 
     fun downloadModelFromIndex(selectedPopularModelIndex: Int) {
-        // Downloading files in Android with the DownloadManager API
-        // Ref: https://youtu.be/4t8EevQSYK4?feature=shared
         val modelUrl = getPopularModel(selectedPopularModelIndex)!!.url
-        downloadModelFromUrl(modelUrl)
+        enqueueDownload(modelUrl)
     }
 
-    fun downloadModelFromUrl(modelUrl: String) {
+    fun enqueueDownload(modelUrl: String): Long {
         val fileName = modelUrl.substring(modelUrl.lastIndexOf('/') + 1)
         val request =
             DownloadManager.Request(modelUrl.toUri())
                 .setTitle(fileName)
-                .setDescription(
-                    "The GGUF model will be downloaded on your device for use with SmolChat."
-                )
+                .setDescription("The GGUF model will be downloaded on your device for use with AstranAi.")
                 .setMimeType("application/octet-stream")
                 .setAllowedNetworkTypes(
                     DownloadManager.Request.NETWORK_WIFI or DownloadManager.Request.NETWORK_MOBILE
@@ -83,7 +79,11 @@ class DownloadModelsViewModel(
                     DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
                 )
                 .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
-        downloadManager.enqueue(request)
+        return downloadManager.enqueue(request)
+    }
+
+    fun downloadModelFromUrl(modelUrl: String) {
+        enqueueDownload(modelUrl)
     }
 
     fun getModels(query: String): Flow<PagingData<HFModelSearch.ModelSearchResult>> =
@@ -104,11 +104,6 @@ class DownloadModelsViewModel(
             }
         }
 
-    /**
-     * Given the model file URI, copy the model file to the app's internal directory. Once copied,
-     * add a new LLMModel entity with modelName=fileName where fileName is the name of the model
-     * file.
-     */
     fun copyModelFile(uri: Uri, onComplete: () -> Unit) {
         var fileName = ""
         context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
@@ -148,11 +143,10 @@ class DownloadModelsViewModel(
             }
         } else {
             Toast.makeText(
-                    context,
-                    context.getString(R.string.toast_invalid_file),
-                    Toast.LENGTH_SHORT,
-            )
-                .show()
+                context,
+                context.getString(R.string.toast_invalid_file),
+                Toast.LENGTH_SHORT,
+            ).show()
         }
     }
 
