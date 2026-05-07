@@ -18,10 +18,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.Check
+import compose.icons.feathericons.Star
 import io.shubham0204.smollmandroid.data.LLMModel
 
 @Preview
@@ -32,21 +34,24 @@ fun PreviewPopularModelsList() {
 
 @Composable
 fun PopularModelsList(selectedModelIndex: Int?, onModelSelected: (Int) -> Unit) {
+    val context = LocalContext.current
+    val recommendedIndex = getRecommendedModelIndex(context)
+
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         popularModelsList.forEachIndexed { idx, model ->
             val isSelected = idx == selectedModelIndex
+            val isRecommended = idx == recommendedIndex
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { onModelSelected(idx) },
                 shape = RoundedCornerShape(12.dp),
-                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(
-                    alpha = 0.3f
-                ),
-                border = if (isSelected) BorderStroke(
-                    2.dp,
-                    MaterialTheme.colorScheme.primary
-                ) else null
+                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer
+                        else if (isRecommended) MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f)
+                        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                border = if (isSelected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+                         else if (isRecommended) BorderStroke(2.dp, MaterialTheme.colorScheme.tertiary)
+                         else null
             ) {
                 Row(
                     Modifier.padding(16.dp),
@@ -60,12 +65,30 @@ fun PopularModelsList(selectedModelIndex: Int?, onModelSelected: (Int) -> Unit) 
                             modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.width(12.dp))
+                    } else if (isRecommended) {
+                        Icon(
+                            FeatherIcons.Star,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.tertiary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
                     }
-                    Text(
-                        text = model.name,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Column {
+                        Text(
+                            text = model.name,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
+                                    else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (isRecommended) {
+                            Text(
+                                text = "⭐ Recomandat pentru telefonul tău",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.tertiary
+                            )
+                        }
+                    }
                 }
             }
         }
