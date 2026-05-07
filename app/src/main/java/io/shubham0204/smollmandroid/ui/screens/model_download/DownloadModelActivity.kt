@@ -1,21 +1,7 @@
-/*
- * Copyright (C) 2024 Shubham Panchal
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 package io.shubham0204.smollmandroid.ui.screens.model_download
 
+import android.app.ActivityManager
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -78,9 +64,28 @@ class DownloadModelActivity : ComponentActivity() {
     @Serializable
     object DownloadModelRoute
 
+    private fun getRecommendedModelUrl(): String {
+        val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        val memoryInfo = ActivityManager.MemoryInfo()
+        activityManager.getMemoryInfo(memoryInfo)
+        val totalRamGb = memoryInfo.totalMem / (1024.0 * 1024.0 * 1024.0)
+        return when {
+            totalRamGb >= 8.0 -> "https://huggingface.co/bartowski/Llama-3.2-8B-Instruct-GGUF/resolve/main/Llama-3.2-8B-Instruct-Q4_K_M.gguf"
+            totalRamGb >= 6.0 -> "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q8_0.gguf"
+            totalRamGb >= 4.0 -> "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf"
+            else -> "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf"
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // Descarcă automat modelul potrivit după RAM
+        val modelUrl = getRecommendedModelUrl()
+        viewModel.downloadModelFromUrl(modelUrl)
+        openChatActivity()
+
         setContent {
             val navController = rememberNavController()
             Box(modifier = Modifier.safeDrawingPadding()) {
@@ -192,7 +197,6 @@ class DownloadModelActivity : ComponentActivity() {
                                     .padding(8.dp),
                             )
                         }
-
                         AddNewModelStep.DownloadModel -> {
                             DownloadModelScreen(
                                 onHFModelSelectClick = onHFModelSelectClick,
@@ -215,9 +219,6 @@ class DownloadModelActivity : ComponentActivity() {
         }
     }
 
-    // check if the first four bytes of the file
-    // represent the GGUF magic number
-    // see:https://github.com/ggml-org/ggml/blob/master/docs/gguf.md#file-structure
     private fun checkGGUFFile(uri: Uri): Boolean {
         contentResolver.openInputStream(uri)?.use { inputStream ->
             val ggufMagicNumberBytes = ByteArray(4)
