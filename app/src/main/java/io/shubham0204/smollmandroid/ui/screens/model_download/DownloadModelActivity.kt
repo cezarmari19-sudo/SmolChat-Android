@@ -16,18 +16,24 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -77,14 +83,23 @@ class DownloadModelActivity : ComponentActivity() {
         }
     }
 
+    private fun getRecommendedModelName(): String {
+        val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        val memoryInfo = ActivityManager.MemoryInfo()
+        activityManager.getMemoryInfo(memoryInfo)
+        val totalRamGb = memoryInfo.totalMem / (1024.0 * 1024.0 * 1024.0)
+        return when {
+            totalRamGb >= 8.0 -> "Llama 3.2 8B Q4 (recomandat pentru ${totalRamGb.toInt()}GB RAM)"
+            totalRamGb >= 6.0 -> "Llama 3.2 3B Q8 (recomandat pentru ${totalRamGb.toInt()}GB RAM)"
+            totalRamGb >= 4.0 -> "Llama 3.2 3B Q4 (recomandat pentru ${totalRamGb.toInt()}GB RAM)"
+            else -> "Llama 3.2 1B Q4 (recomandat pentru ${totalRamGb.toInt()}GB RAM)"
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-
-        // Descarcă automat modelul potrivit după RAM
-        val modelUrl = getRecommendedModelUrl()
-        viewModel.downloadModelFromUrl(modelUrl)
-        openChatActivity()
+        openChatScreen = intent.extras?.getBoolean("openChatScreen") ?: true
 
         setContent {
             val navController = rememberNavController()
@@ -125,106 +140,4 @@ class DownloadModelActivity : ComponentActivity() {
                                 viewModel.fetchModelInfoAndTree(
                                     modelId,
                                     onResult = { modelInfo, modelFiles ->
-                                        hideProgressDialog()
-                                        navController.navigate(
-                                            ViewModelRoute(modelId, modelInfo, modelFiles)
-                                        )
-                                    },
-                                )
-                            },
-                        )
-                    }
-                    composable<DownloadModelRoute> {
-                        AddNewModelScreen(
-                            onHFModelSelectClick = { navController.navigate(HfModelSelectRoute) }
-                        )
-                    }
-                }
-            }
-        }
-        openChatScreen = intent.extras?.getBoolean("openChatScreen") ?: true
-    }
-
-    private fun openChatActivity() {
-        if (openChatScreen) {
-            Intent(this, ChatActivity::class.java).apply {
-                startActivity(this)
-                finish()
-            }
-        } else {
-            finish()
-        }
-    }
-
-    private enum class AddNewModelStep {
-        ImportModel,
-        DownloadModel,
-    }
-
-    @OptIn(ExperimentalMaterial3Api::class)
-    @Composable
-    private fun AddNewModelScreen(onHFModelSelectClick: () -> Unit) {
-        var addNewModelStep by remember { mutableStateOf(AddNewModelStep.DownloadModel) }
-        SmolLMAndroidTheme {
-            Scaffold(
-                modifier = Modifier.fillMaxSize(),
-                topBar = {
-                    TopAppBar(
-                        title = { AppBarTitleText(stringResource(R.string.add_new_model_title)) }
-                    )
-                },
-            ) { innerPadding ->
-                Surface(
-                    modifier = Modifier
-                        .padding(innerPadding)
-                        .verticalScroll(rememberScrollState())
-                ) {
-                    when (addNewModelStep) {
-                        AddNewModelStep.ImportModel -> {
-                            ImportModelScreen(
-                                onPrevSectionClick = {
-                                    addNewModelStep = AddNewModelStep.DownloadModel
-                                },
-                                checkGGUFFile = ::checkGGUFFile,
-                                copyModelFile = { modelFileUri ->
-                                    viewModel.copyModelFile(
-                                        modelFileUri,
-                                        onComplete = { openChatActivity() },
-                                    )
-                                },
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .padding(8.dp),
-                            )
-                        }
-                        AddNewModelStep.DownloadModel -> {
-                            DownloadModelScreen(
-                                onHFModelSelectClick = onHFModelSelectClick,
-                                onNextSectionClick = {
-                                    addNewModelStep = AddNewModelStep.ImportModel
-                                },
-                                onDownloadModelClick = { selectedPopularModelIndex ->
-                                    viewModel.downloadModelFromIndex(selectedPopularModelIndex)
-                                },
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .padding(8.dp),
-                            )
-                        }
-                    }
-                }
-                AppProgressDialog()
-                AppAlertDialog()
-            }
-        }
-    }
-
-    private fun checkGGUFFile(uri: Uri): Boolean {
-        contentResolver.openInputStream(uri)?.use { inputStream ->
-            val ggufMagicNumberBytes = ByteArray(4)
-            inputStream.read(ggufMagicNumberBytes)
-            return ggufMagicNumberBytes.contentEquals(byteArrayOf(71, 71, 85, 70))
-        }
-        return false
-    }
-}
+                                        hideProgress
