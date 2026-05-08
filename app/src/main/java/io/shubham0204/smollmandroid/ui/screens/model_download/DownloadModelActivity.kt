@@ -63,7 +63,6 @@ class DownloadModelActivity : ComponentActivity() {
         override fun onReceive(context: Context, intent: Intent) {
             val id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L)
             if (id == downloadId) {
-                // Descărcarea s-a terminat — înregistrăm modelul în baza de date
                 val downloadManager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
                 val query = DownloadManager.Query().setFilterById(id)
                 val cursor = downloadManager.query(query)
@@ -85,7 +84,6 @@ class DownloadModelActivity : ComponentActivity() {
     private fun registerModelInDatabase(file: File) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                // Copiem fișierul în directorul intern al aplicației
                 val destFile = File(filesDir, file.name)
                 file.copyTo(destFile, overwrite = true)
 
@@ -145,7 +143,12 @@ class DownloadModelActivity : ComponentActivity() {
         enableEdgeToEdge()
         openChatScreen = intent.extras?.getBoolean("openChatScreen") ?: true
 
-        // Înregistrăm receiver-ul pentru descărcare
+        // Dacă există deja modele în baza de date, mergi direct la chat
+        if (viewModel.appDB.getModelsList().isNotEmpty()) {
+            openChatActivity()
+            return
+        }
+
         ContextCompat.registerReceiver(
             this,
             downloadReceiver,
@@ -162,16 +165,18 @@ class DownloadModelActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        unregisterReceiver(downloadReceiver)
+        try {
+            unregisterReceiver(downloadReceiver)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     @Composable
     private fun AutoDownloadScreen() {
         LaunchedEffect(Unit) {
             val modelUrl = getRecommendedModelUrl()
-            // Salvăm downloadId ca să știm ce descărcare să urmărim
             downloadId = viewModel.enqueueDownload(modelUrl)
-            // NU mai deschidem ChatActivity aici — așteptăm BroadcastReceiver
         }
 
         Box(
