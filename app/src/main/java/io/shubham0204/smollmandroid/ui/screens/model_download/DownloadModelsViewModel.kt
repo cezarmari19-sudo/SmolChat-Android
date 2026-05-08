@@ -75,6 +75,8 @@ class DownloadModelsViewModel(
                 .setAllowedNetworkTypes(
                     DownloadManager.Request.NETWORK_WIFI or DownloadManager.Request.NETWORK_MOBILE
                 )
+                .setAllowedOverMetered(true)
+                .setAllowedOverRoaming(true)
                 .setNotificationVisibility(
                     DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
                 )
