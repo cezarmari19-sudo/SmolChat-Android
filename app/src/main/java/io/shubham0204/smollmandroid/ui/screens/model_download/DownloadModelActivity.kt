@@ -50,7 +50,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import org.koin.android.ext.android.inject
 import java.io.File
-import java.nio.file.Paths
 
 class DownloadModelActivity : ComponentActivity() {
     private var openChatScreen: Boolean = true
@@ -60,18 +59,15 @@ class DownloadModelActivity : ComponentActivity() {
     private fun registerModelInDatabase(file: File) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val destFile = File(filesDir, file.name)
-                file.copyTo(destFile, overwrite = true)
-
                 val ggufReader = GGUFReader()
-                ggufReader.load(destFile.absolutePath)
+                ggufReader.load(file.absolutePath)
                 val contextSize = ggufReader.getContextSize() ?: SmolLM.DefaultInferenceParams.contextSize
                 val chatTemplate = ggufReader.getChatTemplate() ?: SmolLM.DefaultInferenceParams.chatTemplate
 
                 viewModel.appDB.addModel(
-                    destFile.name,
+                    file.name,
                     "",
-                    Paths.get(filesDir.absolutePath, destFile.name).toString(),
+                    file.absolutePath,
                     contextSize.toInt(),
                     chatTemplate,
                 )
@@ -133,9 +129,12 @@ class DownloadModelActivity : ComponentActivity() {
 
     @Composable
     private fun AutoDownloadScreen() {
+        var statusText by remember { mutableStateOf("Se inițializează...") }
+
         LaunchedEffect(Unit) {
             val modelUrl = getRecommendedModelUrl()
             downloadId = viewModel.enqueueDownload(modelUrl)
+            statusText = "Descărcare pornită (ID: $downloadId)"
 
             val downloadManager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
             while (true) {
@@ -145,17 +144,22 @@ class DownloadModelActivity : ComponentActivity() {
                 if (cursor.moveToFirst()) {
                     val statusIndex = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
                     val status = cursor.getInt(statusIndex)
+                    statusText = "Status: $status (2=running, 8=success, 16=failed)"
                     if (status == DownloadManager.STATUS_SUCCESSFUL) {
                         val localUriIndex = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)
                         val localUri = cursor.getString(localUriIndex)
                         val file = File(Uri.parse(localUri).path!!)
                         cursor.close()
+                        statusText = "Înregistrare model..."
                         registerModelInDatabase(file)
                         break
                     } else if (status == DownloadManager.STATUS_FAILED) {
                         cursor.close()
+                        statusText = "Eșuat, reîncerc..."
                         downloadId = viewModel.enqueueDownload(modelUrl)
                     }
+                } else {
+                    statusText = "Cursor gol - ID: $downloadId"
                 }
                 cursor.close()
             }
@@ -171,7 +175,7 @@ class DownloadModelActivity : ComponentActivity() {
             ) {
                 CircularProgressIndicator()
                 Text("Se descarcă modelul AI...")
-                Text("Poate dura câteva minute")
+                Text(statusText)
             }
         }
     }
