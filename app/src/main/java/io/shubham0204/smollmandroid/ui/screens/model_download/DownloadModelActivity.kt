@@ -2,10 +2,8 @@ package io.shubham0204.smollmandroid.ui.screens.model_download
 
 import android.app.ActivityManager
 import android.app.DownloadManager
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -34,7 +32,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import io.shubham0204.hf_model_hub_api.HFModelInfo
 import io.shubham0204.hf_model_hub_api.HFModelTree
 import io.shubham0204.smollm.GGUFReader
@@ -47,6 +44,7 @@ import io.shubham0204.smollmandroid.ui.screens.chat.ChatActivity
 import io.shubham0204.smollmandroid.ui.theme.SmolLMAndroidTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -58,28 +56,6 @@ class DownloadModelActivity : ComponentActivity() {
     private var openChatScreen: Boolean = true
     private val viewModel: DownloadModelsViewModel by inject()
     private var downloadId: Long = -1L
-
-    private val downloadReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) {
-            val id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L)
-            if (id == downloadId) {
-                val downloadManager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-                val query = DownloadManager.Query().setFilterById(id)
-                val cursor = downloadManager.query(query)
-                if (cursor.moveToFirst()) {
-                    val statusIndex = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
-                    val status = cursor.getInt(statusIndex)
-                    if (status == DownloadManager.STATUS_SUCCESSFUL) {
-                        val localUriIndex = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)
-                        val localUri = cursor.getString(localUriIndex)
-                        val file = File(Uri.parse(localUri).path!!)
-                        registerModelInDatabase(file)
-                    }
-                }
-                cursor.close()
-            }
-        }
-    }
 
     private fun registerModelInDatabase(file: File) {
         CoroutineScope(Dispatchers.IO).launch {
@@ -143,18 +119,10 @@ class DownloadModelActivity : ComponentActivity() {
         enableEdgeToEdge()
         openChatScreen = intent.extras?.getBoolean("openChatScreen") ?: true
 
-        // Dacă există deja modele în baza de date, mergi direct la chat
         if (viewModel.appDB.getModelsList().isNotEmpty()) {
             openChatActivity()
             return
         }
-
-        ContextCompat.registerReceiver(
-            this,
-            downloadReceiver,
-            IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE),
-            ContextCompat.RECEIVER_NOT_EXPORTED
-        )
 
         setContent {
             SmolLMAndroidTheme {
@@ -163,20 +131,34 @@ class DownloadModelActivity : ComponentActivity() {
         }
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        try {
-            unregisterReceiver(downloadReceiver)
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
     @Composable
     private fun AutoDownloadScreen() {
         LaunchedEffect(Unit) {
             val modelUrl = getRecommendedModelUrl()
             downloadId = viewModel.enqueueDownload(modelUrl)
+
+            val downloadManager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+            while (true) {
+                delay(5000)
+                val query = DownloadManager.Query().setFilterById(downloadId)
+                val cursor = downloadManager.query(query)
+                if (cursor.moveToFirst()) {
+                    val statusIndex = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
+                    val status = cursor.getInt(statusIndex)
+                    if (status == DownloadManager.STATUS_SUCCESSFUL) {
+                        val localUriIndex = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)
+                        val localUri = cursor.getString(localUriIndex)
+                        val file = File(Uri.parse(localUri).path!!)
+                        cursor.close()
+                        registerModelInDatabase(file)
+                        break
+                    } else if (status == DownloadManager.STATUS_FAILED) {
+                        cursor.close()
+                        downloadId = viewModel.enqueueDownload(modelUrl)
+                    }
+                }
+                cursor.close()
+            }
         }
 
         Box(
