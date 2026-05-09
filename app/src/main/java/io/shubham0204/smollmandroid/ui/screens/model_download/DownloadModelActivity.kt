@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.Environment
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -110,6 +111,30 @@ class DownloadModelActivity : ComponentActivity() {
         }
     }
 
+    private fun resolveDownloadedFile(localUri: String, downloadId: Long): File? {
+        return try {
+            val uri = Uri.parse(localUri)
+            if (uri.scheme == "file") {
+                File(uri.path!!)
+            } else {
+                val downloadManager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                val query = DownloadManager.Query().setFilterById(downloadId)
+                val cursor = downloadManager.query(query)
+                if (cursor.moveToFirst()) {
+                    val pathIndex = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_FILENAME)
+                    val path = cursor.getString(pathIndex)
+                    cursor.close()
+                    if (path != null) File(path) else null
+                } else {
+                    cursor.close()
+                    null
+                }
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -134,32 +159,66 @@ class DownloadModelActivity : ComponentActivity() {
         LaunchedEffect(Unit) {
             val modelUrl = getRecommendedModelUrl()
             downloadId = viewModel.enqueueDownload(modelUrl)
-            statusText = "Descărcare pornită (ID: $downloadId)"
+            statusText = "Descărcare pornită..."
 
             val downloadManager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
             while (true) {
-                delay(5000)
+                delay(3000)
                 val query = DownloadManager.Query().setFilterById(downloadId)
                 val cursor = downloadManager.query(query)
                 if (cursor.moveToFirst()) {
                     val statusIndex = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
                     val status = cursor.getInt(statusIndex)
-                    statusText = "Status: $status (2=running, 8=success, 16=failed)"
-                    if (status == DownloadManager.STATUS_SUCCESSFUL) {
-                        val localUriIndex = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)
-                        val localUri = cursor.getString(localUriIndex)
-                        val file = File(Uri.parse(localUri).path!!)
-                        cursor.close()
-                        statusText = "Înregistrare model..."
-                        registerModelInDatabase(file)
-                        break
-                    } else if (status == DownloadManager.STATUS_FAILED) {
-                        cursor.close()
-                        statusText = "Eșuat, reîncerc..."
-                        downloadId = viewModel.enqueueDownload(modelUrl)
+
+                    when (status) {
+                        DownloadManager.STATUS_RUNNING -> {
+                            val totalIndex = cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
+                            val downloadedIndex = cursor.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)
+                            val total = cursor.getLong(totalIndex)
+                            val downloaded = cursor.getLong(downloadedIndex)
+                            statusText = if (total > 0) {
+                                val percent = (downloaded * 100 / total).toInt()
+                                "Se descarcă... $percent%"
+                            } else {
+                                "Se descarcă..."
+                            }
+                        }
+                        DownloadManager.STATUS_PAUSED -> {
+                            val reasonIndex = cursor.getColumnIndex(DownloadManager.COLUMN_REASON)
+                            val reason = cursor.getInt(reasonIndex)
+                            statusText = "Pauză (motiv: $reason) - aștept..."
+                        }
+                        DownloadManager.STATUS_PENDING -> {
+                            statusText = "În așteptare..."
+                        }
+                        DownloadManager.STATUS_SUCCESSFUL -> {
+                            val localUriIndex = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)
+                            val localUri = cursor.getString(localUriIndex)
+                            cursor.close()
+                            statusText = "Înregistrare model..."
+
+                            val file = resolveDownloadedFile(localUri, downloadId)
+                            if (file != null && file.exists()) {
+                                registerModelInDatabase(file)
+                            } else {
+                                val fileName = modelUrl.substring(modelUrl.lastIndexOf('/') + 1)
+                                val fallbackFile = File(
+                                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                                    fileName
+                                )
+                                registerModelInDatabase(if (fallbackFile.exists()) fallbackFile else File(localUri))
+                            }
+                            break
+                        }
+                        DownloadManager.STATUS_FAILED -> {
+                            cursor.close()
+                            statusText = "Eșuat, reîncerc..."
+                            delay(2000)
+                            downloadId = viewModel.enqueueDownload(modelUrl)
+                        }
                     }
                 } else {
-                    statusText = "Cursor gol - ID: $downloadId"
+                    statusText = "Aștept descărcarea..."
                 }
                 cursor.close()
             }
