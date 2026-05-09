@@ -55,7 +55,6 @@ import java.io.File
 class DownloadModelActivity : ComponentActivity() {
     private var openChatScreen: Boolean = true
     private val viewModel: DownloadModelsViewModel by inject()
-    private var downloadId: Long = -1L
 
     private fun registerModelInDatabase(file: File) {
         CoroutineScope(Dispatchers.IO).launch {
@@ -98,33 +97,34 @@ class DownloadModelActivity : ComponentActivity() {
     @Serializable
     object DownloadModelRoute
 
-   private fun getRecommendedModelUrl(): String {
-    val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-    val memoryInfo = ActivityManager.MemoryInfo()
-    activityManager.getMemoryInfo(memoryInfo)
-    
-    // availMem = RAM liber efectiv (nu totalMem!)
-    val availRamGb = memoryInfo.availMem / (1024.0 * 1024.0 * 1024.0)
-    
-    return when {
-availRamGb >= 15.0 -> "https://huggingface.co/bartowski/google_gemma-3-12b-it-GGUF/resolve/main/google_gemma-3-12b-it-Q8_0.gguf"
-        availRamGb >= 14.0 -> "https://huggingface.co/bartowski/google_gemma-3-12b-it-GGUF/resolve/main/google_gemma-3-12b-it-Q5_K_M.gguf"
-availRamGb >= 13.0 -> "https://huggingface.co/bartowski/google_gemma-3-12b-it-GGUF/resolve/main/google_gemma-3-12b-it-Q5_K_M.gguf"
-        availRamGb >= 12.0 -> "https://huggingface.co/bartowski/google_gemma-3-12b-it-GGUF/resolve/main/google_gemma-3-12b-it-Q4_K_M.gguf"
-availRamGb >= 11.0 -> "https://huggingface.co/bartowski/google_gemma-3-12b-it-GGUF/resolve/main/google_gemma-3-12b-it-Q4_K_M.gguf"
-        availRamGb >= 10.0 -> "https://huggingface.co/bartowski/google_gemma-3-12b-it-GGUF/resolve/main/google_gemma-3-12b-it-Q4_0.gguf"
-availRamGb >= 9.0  -> "https://huggingface.co/bartowski/google_gemma-3-12b-it-GGUF/resolve/main/google_gemma-3-12b-it-Q4_0.gguf"
-        availRamGb >= 8.0  -> "https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF/resolve/main/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf"
-        availRamGb >= 7.0  -> "https://huggingface.co/bartowski/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q8_0.gguf"
-        availRamGb >= 6.0  -> "https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF/resolve/main/Meta-Llama-3.1-8B-Instruct-Q4_0.gguf"
-        availRamGb >= 5.0  -> "https://huggingface.co/bartowski/google_gemma-3-4b-it-GGUF/resolve/main/google_gemma-3-4b-it-Q5_K_M.gguf"
-        availRamGb >= 4.0  -> "https://huggingface.co/bartowski/google_gemma-3-4b-it-GGUF/resolve/main/google_gemma-3-4b-it-Q4_K_M.gguf"
-        availRamGb >= 3.0  -> "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf"
-        availRamGb >= 2.0  -> "https://huggingface.co/bartowski/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q4_K_M.gguf"
-availRamGb >= 1.0  -> "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf"
-        else               -> "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf"
+    private fun getRecommendedModelUrl(): String {
+        val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        val memoryInfo = ActivityManager.MemoryInfo()
+        activityManager.getMemoryInfo(memoryInfo)
+
+        // availMem = RAM liber efectiv (nu totalMem!)
+        val availRamGb = memoryInfo.availMem / (1024.0 * 1024.0 * 1024.0)
+
+        return when {
+            availRamGb >= 15.0 -> "https://huggingface.co/bartowski/google_gemma-3-12b-it-GGUF/resolve/main/google_gemma-3-12b-it-Q8_0.gguf"
+            availRamGb >= 14.0 -> "https://huggingface.co/bartowski/google_gemma-3-12b-it-GGUF/resolve/main/google_gemma-3-12b-it-Q5_K_M.gguf"
+            availRamGb >= 13.0 -> "https://huggingface.co/bartowski/google_gemma-3-12b-it-GGUF/resolve/main/google_gemma-3-12b-it-Q5_K_M.gguf"
+            availRamGb >= 12.0 -> "https://huggingface.co/bartowski/google_gemma-3-12b-it-GGUF/resolve/main/google_gemma-3-12b-it-Q4_K_M.gguf"
+            availRamGb >= 11.0 -> "https://huggingface.co/bartowski/google_gemma-3-12b-it-GGUF/resolve/main/google_gemma-3-12b-it-Q4_K_M.gguf"
+            availRamGb >= 10.0 -> "https://huggingface.co/bartowski/google_gemma-3-12b-it-GGUF/resolve/main/google_gemma-3-12b-it-Q4_0.gguf"
+            availRamGb >= 9.0  -> "https://huggingface.co/bartowski/google_gemma-3-12b-it-GGUF/resolve/main/google_gemma-3-12b-it-Q4_0.gguf"
+            availRamGb >= 8.0  -> "https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF/resolve/main/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf"
+            availRamGb >= 7.0  -> "https://huggingface.co/bartowski/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q8_0.gguf"
+            availRamGb >= 6.0  -> "https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF/resolve/main/Meta-Llama-3.1-8B-Instruct-Q4_0.gguf"
+            availRamGb >= 5.0  -> "https://huggingface.co/bartowski/google_gemma-3-4b-it-GGUF/resolve/main/google_gemma-3-4b-it-Q5_K_M.gguf"
+            availRamGb >= 4.0  -> "https://huggingface.co/bartowski/google_gemma-3-4b-it-GGUF/resolve/main/google_gemma-3-4b-it-Q4_K_M.gguf"
+            availRamGb >= 3.0  -> "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf"
+            availRamGb >= 2.0  -> "https://huggingface.co/bartowski/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q4_K_M.gguf"
+            availRamGb >= 1.0  -> "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf"
+            else               -> "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf"
+        }
     }
-}
+
     private fun resolveDownloadedFile(localUri: String, downloadId: Long): File? {
         return try {
             val uri = Uri.parse(localUri)
@@ -172,69 +172,89 @@ availRamGb >= 1.0  -> "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GG
 
         LaunchedEffect(Unit) {
             val modelUrl = getRecommendedModelUrl()
-            downloadId = viewModel.enqueueDownload(modelUrl)
+            // variabilă locală — nu mai există race condition cu câmpul din Activity
+            var currentDownloadId = viewModel.enqueueDownload(modelUrl)
             statusText = "Descărcare pornită..."
 
             val downloadManager = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+
             while (true) {
                 delay(3000)
-                val query = DownloadManager.Query().setFilterById(downloadId)
+                val query = DownloadManager.Query().setFilterById(currentDownloadId)
                 val cursor = downloadManager.query(query)
-                if (cursor.moveToFirst()) {
-                    val statusIndex = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
-                    val status = cursor.getInt(statusIndex)
 
-                    when (status) {
-                        DownloadManager.STATUS_RUNNING -> {
-                            val totalIndex = cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
-                            val downloadedIndex = cursor.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)
-                            val total = cursor.getLong(totalIndex)
-                            val downloaded = cursor.getLong(downloadedIndex)
-                            statusText = if (total > 0) {
-                                val percent = (downloaded * 100 / total).toInt()
-                                "Se descarcă... $percent%"
-                            } else {
-                                "Se descarcă..."
-                            }
-                        }
-                        DownloadManager.STATUS_PAUSED -> {
-                            val reasonIndex = cursor.getColumnIndex(DownloadManager.COLUMN_REASON)
-                            val reason = cursor.getInt(reasonIndex)
-                            statusText = "Pauză (motiv: $reason) - aștept..."
-                        }
-                        DownloadManager.STATUS_PENDING -> {
-                            statusText = "În așteptare..."
-                        }
-                        DownloadManager.STATUS_SUCCESSFUL -> {
-                            val localUriIndex = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)
-                            val localUri = cursor.getString(localUriIndex)
-                            cursor.close()
-                            statusText = "Înregistrare model..."
-
-                            val file = resolveDownloadedFile(localUri, downloadId)
-                            if (file != null && file.exists()) {
-                                registerModelInDatabase(file)
-                            } else {
-                                val fileName = modelUrl.substring(modelUrl.lastIndexOf('/') + 1)
-                                val fallbackFile = File(
-                                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-                                    fileName
-                                )
-                                registerModelInDatabase(if (fallbackFile.exists()) fallbackFile else File(localUri))
-                            }
-                            break
-                        }
-                        DownloadManager.STATUS_FAILED -> {
-                            cursor.close()
-                            statusText = "Eșuat, reîncerc..."
-                            delay(2000)
-                            downloadId = viewModel.enqueueDownload(modelUrl)
-                        }
-                    }
-                } else {
+                if (!cursor.moveToFirst()) {
+                    cursor.close()
                     statusText = "Aștept descărcarea..."
+                    continue
                 }
-                cursor.close()
+
+                val status = cursor.getInt(cursor.getColumnIndex(DownloadManager.COLUMN_STATUS))
+
+                when (status) {
+                    DownloadManager.STATUS_RUNNING -> {
+                        val total = cursor.getLong(
+                            cursor.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
+                        )
+                        val downloaded = cursor.getLong(
+                            cursor.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)
+                        )
+                        statusText = if (total > 0) {
+                            "Se descarcă... ${(downloaded * 100 / total).toInt()}%"
+                        } else {
+                            "Se descarcă..."
+                        }
+                        cursor.close()
+                    }
+
+                    DownloadManager.STATUS_PAUSED -> {
+                        val reason = cursor.getInt(
+                            cursor.getColumnIndex(DownloadManager.COLUMN_REASON)
+                        )
+                        statusText = "Pauză (motiv: $reason) - aștept..."
+                        cursor.close()
+                    }
+
+                    DownloadManager.STATUS_PENDING -> {
+                        statusText = "În așteptare..."
+                        cursor.close()
+                    }
+
+                    DownloadManager.STATUS_SUCCESSFUL -> {
+                        val localUri = cursor.getString(
+                            cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)
+                        )
+                        cursor.close()
+                        statusText = "Înregistrare model..."
+
+                        val file = resolveDownloadedFile(localUri, currentDownloadId)
+                        if (file != null && file.exists()) {
+                            registerModelInDatabase(file)
+                        } else {
+                            val fileName = modelUrl.substringAfterLast('/')
+                            val fallback = File(
+                                Environment.getExternalStoragePublicDirectory(
+                                    Environment.DIRECTORY_DOWNLOADS
+                                ),
+                                fileName
+                            )
+                            registerModelInDatabase(
+                                if (fallback.exists()) fallback else File(localUri)
+                            )
+                        }
+                        break
+                    }
+
+                    DownloadManager.STATUS_FAILED -> {
+                        cursor.close()
+                        statusText = "Eșuat, reîncerc..."
+                        delay(2000)
+                        // currentDownloadId local — query-ul următor va folosi noul ID corect
+                        currentDownloadId = viewModel.enqueueDownload(modelUrl)
+                    }
+
+                    else -> cursor.close()
+                }
             }
         }
 
