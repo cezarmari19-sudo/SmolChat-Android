@@ -373,14 +373,13 @@ class ChatScreenViewModel(
     // ─────────────────────────────────────────────────────────────────────────
 
     /**
-     * Returnează RAM-ul TOTAL al telefonului în GB.
-     * Folosit pentru alegerea automată a modelului —
-     * totalMem e stabil, availMem variază și nu e relevant aici.
+     * Returnează RAM-ul DISPONIBIL (liber) în GB.
+     * Util pentru alegerea automată a modelului.
      */
-    fun getTotalRamGb(): Double {
+    fun getAvailableRamGb(): Double {
         val memoryInfo = MemoryInfo()
         activityManager.getMemoryInfo(memoryInfo)
-        return memoryInfo.totalMem / 1024.0.pow(3.0)
+        return memoryInfo.availMem / 1024.0.pow(3.0)
     }
 
     /**
