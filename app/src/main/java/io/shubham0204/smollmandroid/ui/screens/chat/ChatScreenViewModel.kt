@@ -1,4 +1,4 @@
- /*
+/*
 Copyright (C) 2024 Shubham Panchal
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -70,16 +70,14 @@ private val LOGE: (String, Throwable?) -> Unit = { msg, t ->
     if (t != null) Log.e(LOGTAG, msg, t) else Log.e(LOGTAG, msg)
 }
 
-// Regex pentru blocuri <think>
 private val findThinkHtmlBlockRegex = Regex("<blockquote><i><h6>[\\s\\S]*?</i></h6></blockquote>")
 internal fun String.stripThinkingForClipboard() = findThinkHtmlBlockRegex.replace(this, "").trim()
 
-// ─────────────────────────────────────────────────────────────────────────────
-// UI EVENTS  (structura originală păstrată, fără sealed class imbricat greșit)
-// ─────────────────────────────────────────────────────────────────────────────
-sealed class ChatScreenUIEvent {
+// -----------------------------------------------------------------------------
+// EVENTS
+// -----------------------------------------------------------------------------
 
-    // Chat events
+sealed class ChatScreenUIEvent {
     data class UpdateChatModel(val model: LLMModel) : ChatScreenUIEvent()
     data object LoadChatModel : ChatScreenUIEvent()
     data class DeleteModel(val model: LLMModel) : ChatScreenUIEvent()
@@ -96,20 +94,18 @@ sealed class ChatScreenUIEvent {
     data class OnDeleteChatMessages(val chat: Chat) : ChatScreenUIEvent()
     data object NewChat : ChatScreenUIEvent()
     data class SwitchChat(val chat: Chat) : ChatScreenUIEvent()
-    data class UpdateChatSettings(val settings: EditableChatSettings, val existingChat: Chat) :
-        ChatScreenUIEvent()
+    data class UpdateChatSettings(
+        val settings: EditableChatSettings,
+        val existingChat: Chat,
+    ) : ChatScreenUIEvent()
     data class StartBenchmark(val onResult: (String) -> Unit) : ChatScreenUIEvent()
     data class StartAudioTranscription(val onLineComplete: (String) -> Unit) : ChatScreenUIEvent()
     data object StopAudioTranscription : ChatScreenUIEvent()
-
-    // Folder events
     data class UpdateChatFolder(val newFolderId: Long) : ChatScreenUIEvent()
     data class AddFolder(val folderName: String) : ChatScreenUIEvent()
     data class UpdateFolder(val folder: Folder) : ChatScreenUIEvent()
     data class DeleteFolder(val folderId: Long) : ChatScreenUIEvent()
     data class DeleteFolderWithChats(val folderId: Long) : ChatScreenUIEvent()
-
-    // Dialog events
     data class ToggleChangeFolderDialog(val visible: Boolean) : ChatScreenUIEvent()
     data class ToggleSelectModelListDialog(val visible: Boolean) : ChatScreenUIEvent()
     data class ToggleMoreOptionsPopup(val visible: Boolean) : ChatScreenUIEvent()
@@ -118,9 +114,10 @@ sealed class ChatScreenUIEvent {
     data class ShowContextLengthUsageDialog(val chat: Chat) : ChatScreenUIEvent()
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // UI STATE
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
+
 data class AudioTranscriptionUIState(
     val isRecording: Boolean = false,
     val isAvailable: Boolean = false,
@@ -148,9 +145,10 @@ data class ChatScreenUIState(
     val showTasksBottomSheet: Boolean = false,
 )
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // VIEW MODEL
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
+
 @KoinViewModel
 class ChatScreenViewModel(
     val context: Context,
@@ -177,14 +175,8 @@ class ChatScreenViewModel(
     private val findThinkTagRegex = Regex("<think>(.*?)</think>", RegexOption.DOT_MATCHES_ALL)
     private lateinit var activityManager: ActivityManager
 
-    // ── Guard împotriva load-urilor multiple simultane ──────────────────────
     private var loadModelJob: Job? = null
     private val isModelLoading = AtomicBoolean(false)
-
-    /**
-     * Path-ul modelului care este EFECTIV încărcat în SmolLMManager.
-     * null = niciun model încărcat.
-     */
     private var currentLoadedModelPath: String? = null
 
     init {
@@ -193,73 +185,80 @@ class ChatScreenViewModel(
         loadModel()
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // LOAD MODEL  (refactorizat complet)
-    // ─────────────────────────────────────────────────────────────────────────
+    // -------------------------------------------------------------------------
+    // RAM
+    // -------------------------------------------------------------------------
 
-    /**
-     * Încarcă modelul asociat chat-ului curent.
-     *
-     * Reguli de siguranță:
-     * 1. Dacă același model e deja încărcat cu succes → skip complet.
-     * 2. Dacă un alt load rulează → îl anulăm înainte de a porni unul nou.
-     * 3. Verificăm că fișierul există pe disk înainte de a apela SmolLMManager.
-     * 4. Un delay mic (300 ms) după unload permite SmolLMManager să se reseteze.
-     * 5. AtomicBoolean previne intrarea a două coroutine simultan.
-     */
+    fun getAvailableRamGb(): Double {
+        val memoryInfo = MemoryInfo()
+        activityManager.getMemoryInfo(memoryInfo)
+        return memoryInfo.availMem / 1024.0.pow(3.0)
+    }
+
+    private fun getCurrentMemoryUsage(): Pair<Float, Float> {
+        val memoryInfo = MemoryInfo()
+        activityManager.getMemoryInfo(memoryInfo)
+        val total = memoryInfo.totalMem / 1024.0.pow(3.0)
+        val used = (memoryInfo.totalMem - memoryInfo.availMem) / 1024.0.pow(3.0)
+        return Pair(used.toFloat(), total.toFloat())
+    }
+
+    // -------------------------------------------------------------------------
+    // LOAD / UNLOAD MODEL
+    // -------------------------------------------------------------------------
+
     fun loadModel(onComplete: (ModelLoadingState) -> Unit = {}) {
         val chat = _uiState.value.chat
 
-        // Niciun model selectat → arată dialogul de selecție
         if (chat.llmModelId == -1L) {
-            LOGD("loadModel: no model selected for chat ${chat.id}")
+            LOGD("loadModel: no model selected")
             _uiState.update { it.copy(showSelectModelListDialog = true) }
             onComplete(ModelLoadingState.NOT_LOADED)
             return
         }
 
-        // Verifică dacă modelul există în repository
         val model = try {
             modelsRepository.getModelFromId(chat.llmModelId)
         } catch (e: Exception) {
-            LOGE("loadModel: model id=${chat.llmModelId} not found in DB", e)
+            LOGE("loadModel: model not found in DB", e)
             _uiState.update { it.copy(modelLoadingState = ModelLoadingState.FAILURE) }
             onComplete(ModelLoadingState.FAILURE)
             return
         }
 
-        // Dacă exact același model e deja încărcat cu succes → skip
-        if (
-            currentLoadedModelPath == model.path &&
+        if (currentLoadedModelPath == model.path &&
             _uiState.value.modelLoadingState == ModelLoadingState.SUCCESS
         ) {
-            LOGD("loadModel: model already loaded at ${model.path}, skipping")
+            LOGD("loadModel: already loaded, skip")
             onComplete(ModelLoadingState.SUCCESS)
             return
         }
 
-        // Anulează orice load anterior în curs
         loadModelJob?.cancel()
-        LOGD("loadModel: starting load for model '${model.name}' path=${model.path}")
 
         loadModelJob = viewModelScope.launch {
-            // Previne intrarea simultană a două coroutine
             if (!isModelLoading.compareAndSet(false, true)) {
-                LOGD("loadModel: already loading, skip duplicate call")
+                LOGD("loadModel: already in progress, skip")
                 return@launch
             }
-
             try {
-                // FIX #3 – verificare existență fișier înainte de load
                 if (!File(model.path).exists()) {
                     LOGE("loadModel: file not found at ${model.path}", null)
                     _uiState.update { it.copy(modelLoadingState = ModelLoadingState.FAILURE) }
                     onComplete(ModelLoadingState.FAILURE)
-                    showModelFileNotFoundDialog()
+                    createAlertDialog(
+                        dialogTitle = context.getString(R.string.dialog_err_title),
+                        dialogText = "Fișierul modelului nu a fost găsit. Alege alt model.",
+                        dialogPositiveButtonText = context.getString(R.string.dialog_err_change_model),
+                        onPositiveButtonClick = {
+                            onEvent(ChatScreenUIEvent.ToggleSelectModelListDialog(visible = true))
+                        },
+                        dialogNegativeButtonText = context.getString(R.string.dialog_err_close),
+                        onNegativeButtonClick = {},
+                    )
                     return@launch
                 }
 
-                // Unload model anterior + mică pauză de stabilizare
                 if (currentLoadedModelPath != null) {
                     LOGD("loadModel: unloading previous model")
                     smolLMManager.unload()
@@ -285,33 +284,37 @@ class ChatScreenViewModel(
                         chat.useMlock,
                     ),
                     onError = { e ->
-                        LOGE("loadModel: SmolLMManager.load() failed", e)
+                        LOGE("loadModel: smolLMManager.load failed", e)
                         currentLoadedModelPath = null
-                        _uiState.update {
-                            it.copy(modelLoadingState = ModelLoadingState.FAILURE)
-                        }
+                        _uiState.update { it.copy(modelLoadingState = ModelLoadingState.FAILURE) }
                         onComplete(ModelLoadingState.FAILURE)
-                        showModelLoadErrorDialog(e)
+                        createAlertDialog(
+                            dialogTitle = context.getString(R.string.dialog_err_title),
+                            dialogText = context.getString(R.string.dialog_err_text, e.message),
+                            dialogPositiveButtonText = context.getString(R.string.dialog_err_change_model),
+                            onPositiveButtonClick = {
+                                onEvent(ChatScreenUIEvent.ToggleSelectModelListDialog(visible = true))
+                            },
+                            dialogNegativeButtonText = context.getString(R.string.dialog_err_close),
+                            onNegativeButtonClick = {},
+                        )
                     },
                     onSuccess = {
-                        LOGD("loadModel: SUCCESS for ${model.path}")
+                        LOGD("loadModel: success")
                         currentLoadedModelPath = model.path
                         _uiState.update {
                             it.copy(
                                 modelLoadingState = ModelLoadingState.SUCCESS,
-                                memoryUsage = if (it.memoryUsage != null) {
-                                    getCurrentMemoryUsage()
-                                } else null,
+                                memoryUsage = if (it.memoryUsage != null) getCurrentMemoryUsage() else null,
                             )
                         }
                         onComplete(ModelLoadingState.SUCCESS)
                     },
                 )
             } catch (e: CancellationException) {
-                // Normal – job anulat de un load mai nou
-                LOGD("loadModel: job cancelled (new load requested)")
+                LOGD("loadModel: cancelled")
             } catch (e: Exception) {
-                LOGE("loadModel: unexpected exception", e)
+                LOGE("loadModel: unexpected error", e)
                 currentLoadedModelPath = null
                 _uiState.update { it.copy(modelLoadingState = ModelLoadingState.FAILURE) }
                 onComplete(ModelLoadingState.FAILURE)
@@ -321,184 +324,96 @@ class ChatScreenViewModel(
         }
     }
 
-    /**
-     * Unload sigur – nu face nimic dacă inferența rulează deja.
-     * Resetează currentLoadedModelPath.
-     */
-    fun unloadModel(): Boolean =
-        if (!smolLMManager.isInferenceOn) {
+    fun unloadModel(): Boolean {
+        return if (!smolLMManager.isInferenceOn) {
             smolLMManager.unload()
             currentLoadedModelPath = null
             _uiState.update { it.copy(modelLoadingState = ModelLoadingState.NOT_LOADED) }
             LOGD("unloadModel: success")
             true
         } else {
-            LOGD("unloadModel: inference running, skipping")
+            LOGD("unloadModel: inference running, skip")
             false
         }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // DIALOG HELPERS
-    // ─────────────────────────────────────────────────────────────────────────
-
-    private fun showModelLoadErrorDialog(e: Exception) {
-        createAlertDialog(
-            dialogTitle = context.getString(R.string.dialog_err_title),
-            dialogText = context.getString(R.string.dialog_err_text, e.message),
-            dialogPositiveButtonText = context.getString(R.string.dialog_err_change_model),
-            onPositiveButtonClick = {
-                onEvent(ToggleSelectModelListDialog(visible = true))
-            },
-            dialogNegativeButtonText = context.getString(R.string.dialog_err_close),
-            onNegativeButtonClick = {},
-        )
     }
 
-    private fun showModelFileNotFoundDialog() {
-        createAlertDialog(
-            dialogTitle = context.getString(R.string.dialog_err_title),
-            dialogText = "Fișierul modelului nu a fost găsit pe dispozitiv. " +
-                "Alege un alt model sau descarcă modelul din nou.",
-            dialogPositiveButtonText = context.getString(R.string.dialog_err_change_model),
-            onPositiveButtonClick = {
-                onEvent(ToggleSelectModelListDialog(visible = true))
-            },
-            dialogNegativeButtonText = context.getString(R.string.dialog_err_close),
-            onNegativeButtonClick = {},
-        )
-    }
+    // -------------------------------------------------------------------------
+    // WEB SEARCH
+    // -------------------------------------------------------------------------
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // RAM DETECTION  (FIX #6 – calcul corect)
-    // ─────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Returnează RAM-ul DISPONIBIL (liber) în GB.
-     * Util pentru alegerea automată a modelului.
-     */
-    fun getAvailableRamGb(): Double {
-        val memoryInfo = MemoryInfo()
-        activityManager.getMemoryInfo(memoryInfo)
-        return memoryInfo.availMem / 1024.0.pow(3.0)
-    }
-
-    /**
-     * Returnează (ramUtilizat, ramTotal) în GB.
-     * FIX #6: usedMemory = totalMem - availMem, nu availMem.
-     */
-    private fun getCurrentMemoryUsage(): Pair<Float, Float> {
-        val memoryInfo = MemoryInfo()
-        activityManager.getMemoryInfo(memoryInfo)
-        val totalMemory = memoryInfo.totalMem / 1024.0.pow(3.0)
-        val usedMemory = (memoryInfo.totalMem - memoryInfo.availMem) / 1024.0.pow(3.0)
-        return Pair(usedMemory.toFloat(), totalMemory.toFloat())
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // WEB SEARCH  (FIX #4 + #5 – timeout + fallback robust)
-    // ─────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Caută pe DuckDuckGo cu timeout strict de 5 secunde.
-     * Dacă API-ul nu răspunde sau returnează date goale → returnează "".
-     * Nu blochează niciodată inferența.
-     */
     private suspend fun searchWeb(query: String): String {
-        // withTimeoutOrNull returnează null dacă expiră → tratăm ca empty
         val result = withTimeoutOrNull(5_000L) {
             withContext(Dispatchers.IO) {
                 try {
-                    val encodedQuery = java.net.URLEncoder.encode(query, "UTF-8")
+                    val encoded = java.net.URLEncoder.encode(query, "UTF-8")
                     val url = java.net.URL(
-                        "https://api.duckduckgo.com/?q=$encodedQuery&format=json&no_html=1&skip_disambig=1"
+                        "https://api.duckduckgo.com/?q=$encoded&format=json&no_html=1&skip_disambig=1"
                     )
-                    val connection = url.openConnection() as java.net.HttpURLConnection
-                    connection.requestMethod = "GET"
-                    connection.setRequestProperty("User-Agent", "Mozilla/5.0")
-                    connection.connectTimeout = 4_000
-                    connection.readTimeout = 4_000
-
-                    val responseText = try {
-                        connection.inputStream.bufferedReader().readText()
+                    val conn = url.openConnection() as java.net.HttpURLConnection
+                    conn.requestMethod = "GET"
+                    conn.setRequestProperty("User-Agent", "Mozilla/5.0")
+                    conn.connectTimeout = 4_000
+                    conn.readTimeout = 4_000
+                    val text = try {
+                        conn.inputStream.bufferedReader().readText()
                     } finally {
-                        connection.disconnect()
+                        conn.disconnect()
                     }
-
-                    val json = org.json.JSONObject(responseText)
-                    val results = StringBuilder()
-
-                    val abstract = json.optString("AbstractText", "")
-                    if (abstract.isNotBlank()) {
-                        results.appendLine("• $abstract")
-                    }
-
-                    val relatedTopics = json.optJSONArray("RelatedTopics")
-                    if (relatedTopics != null) {
+                    val json = org.json.JSONObject(text)
+                    val sb = StringBuilder()
+                    val abstractText = json.optString("AbstractText", "")
+                    if (abstractText.isNotBlank()) sb.appendLine("• $abstractText")
+                    val topics = json.optJSONArray("RelatedTopics")
+                    if (topics != null) {
                         var count = 0
-                        for (i in 0 until relatedTopics.length()) {
+                        for (i in 0 until topics.length()) {
                             if (count >= 3) break
-                            val topic = relatedTopics.optJSONObject(i) ?: continue
-                            val text = topic.optString("Text", "")
-                            if (text.isNotBlank()) {
-                                results.appendLine("• $text")
+                            val topic = topics.optJSONObject(i) ?: continue
+                            val t = topic.optString("Text", "")
+                            if (t.isNotBlank()) {
+                                sb.appendLine("• $t")
                                 count++
                             }
                         }
                     }
-
-                    results.toString().trim()
+                    sb.toString().trim()
                 } catch (e: Exception) {
-                    LOGE("searchWeb: failed for query='$query'", e)
+                    LOGE("searchWeb: error", e)
                     ""
                 }
             }
         }
-
-        if (result == null) {
-            LOGD("searchWeb: timeout for query='$query'")
-        }
+        if (result == null) LOGD("searchWeb: timeout")
         return result ?: ""
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // SEND USER QUERY
-    // ─────────────────────────────────────────────────────────────────────────
+    // -------------------------------------------------------------------------
+    // SEND QUERY
+    // -------------------------------------------------------------------------
 
     private fun sendUserQuery(query: String, addMessageToDB: Boolean = true) {
         val chat = uiState.value.chat
         chat.dateUsed = Date()
         appDB.updateChat(chat)
-
-        if (chat.isTask) {
-            appDB.deleteMessages(chat.id)
-        }
-
-        if (addMessageToDB) {
-            appDB.addUserMessage(chat.id, query)
-        }
-
+        if (chat.isTask) appDB.deleteMessages(chat.id)
+        if (addMessageToDB) appDB.addUserMessage(chat.id, query)
         _uiState.update { it.copy(isGeneratingResponse = true, renderedPartialResponse = null) }
-
         viewModelScope.launch {
-            // Căutare web cu timeout – nu blochează dacă eșuează
             val webContext = searchWeb(query)
             val finalQuery = if (webContext.isNotBlank()) {
                 "[Informații recente de pe internet]\n$webContext\n\n[Întrebarea utilizatorului]\n$query"
             } else {
                 query
             }
-
             smolLMManager.getResponse(
                 finalQuery,
                 responseTransform = { resp ->
-                    findThinkTagRegex.replace(resp) { matchResult ->
-                        "<blockquote><i><h6>${matchResult.groupValues[1].trim()}</i></h6></blockquote>"
+                    findThinkTagRegex.replace(resp) { match ->
+                        "<blockquote><i><h6>${match.groupValues[1].trim()}</i></h6></blockquote>"
                     }
                 },
                 onPartialResponseGenerated = { resp ->
-                    _uiState.update {
-                        it.copy(renderedPartialResponse = mdRenderer.render(resp))
-                    }
+                    _uiState.update { it.copy(renderedPartialResponse = mdRenderer.render(resp)) }
                 },
                 onSuccess = { response ->
                     val updatedChat = chat.copy(contextSizeConsumed = response.contextLengthUsed)
@@ -508,9 +423,7 @@ class ChatScreenViewModel(
                             isGeneratingResponse = false,
                             responseGenerationsSpeed = response.generationSpeed,
                             responseGenerationTimeSecs = response.generationTimeSecs,
-                            memoryUsage = if (it.memoryUsage != null) {
-                                getCurrentMemoryUsage()
-                            } else null,
+                            memoryUsage = if (it.memoryUsage != null) getCurrentMemoryUsage() else null,
                         )
                     }
                     appDB.updateChat(updatedChat)
@@ -519,15 +432,14 @@ class ChatScreenViewModel(
                     _uiState.update { it.copy(isGeneratingResponse = false) }
                 },
                 onError = { exception ->
-                    LOGE("sendUserQuery: getResponse error", exception)
+                    LOGE("sendUserQuery: error", exception)
                     _uiState.update { it.copy(isGeneratingResponse = false) }
                     createAlertDialog(
                         dialogTitle = "An error occurred",
-                        dialogText = "The app is unable to process the query. " +
-                            "Error: ${exception.message}",
+                        dialogText = "Error: ${exception.message}",
                         dialogPositiveButtonText = "Change model",
                         onPositiveButtonClick = {
-                            onEvent(ToggleSelectModelListDialog(visible = true))
+                            onEvent(ChatScreenUIEvent.ToggleSelectModelListDialog(visible = true))
                         },
                         dialogNegativeButtonText = "Close",
                         onNegativeButtonClick = {},
@@ -537,38 +449,30 @@ class ChatScreenViewModel(
         }
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // ON EVENT  (structura originală păstrată, cu alias-uri pentru claritate)
-    // ─────────────────────────────────────────────────────────────────────────
-
-    // Alias-uri locale pentru a evita referințele lungi
-    private fun ToggleSelectModelListDialog(visible: Boolean) =
-        ChatScreenUIEvent.ToggleSelectModelListDialog(visible)
+    // -------------------------------------------------------------------------
+    // ON EVENT
+    // -------------------------------------------------------------------------
 
     @SuppressLint("StringFormatMatches")
     fun onEvent(event: ChatScreenUIEvent) {
         when (event) {
-            is ChatScreenUIEvent.ToggleSelectModelListDialog ->
+            is ChatScreenUIEvent.ToggleSelectModelListDialog -> {
                 _uiState.update { it.copy(showSelectModelListDialog = event.visible) }
-
-            is ChatScreenUIEvent.ToggleMoreOptionsPopup ->
+            }
+            is ChatScreenUIEvent.ToggleMoreOptionsPopup -> {
                 _uiState.update { it.copy(showMoreOptionsPopup = event.visible) }
-
-            is ChatScreenUIEvent.ToggleTaskListBottomList ->
+            }
+            is ChatScreenUIEvent.ToggleTaskListBottomList -> {
                 _uiState.update { it.copy(showTasksBottomSheet = event.visible) }
-
-            is ChatScreenUIEvent.ToggleChangeFolderDialog ->
+            }
+            is ChatScreenUIEvent.ToggleChangeFolderDialog -> {
                 _uiState.update { it.copy(showChangeFolderDialog = event.visible) }
-
-            ChatScreenUIEvent.ToggleRAMUsageLabel ->
-                _uiState.update {
-                    it.copy(
-                        memoryUsage = if (it.memoryUsage != null) null
-                        else getCurrentMemoryUsage()
-                    )
-                }
-
-            is ChatScreenUIEvent.ShowContextLengthUsageDialog ->
+            }
+            is ChatScreenUIEvent.ToggleRAMUsageLabel -> {
+                val newVal = if (_uiState.value.memoryUsage != null) null else getCurrentMemoryUsage()
+                _uiState.update { it.copy(memoryUsage = newVal) }
+            }
+            is ChatScreenUIEvent.ShowContextLengthUsageDialog -> {
                 createAlertDialog(
                     dialogTitle = context.getString(R.string.dialog_ctx_usage_title),
                     dialogText = context.getString(
@@ -581,28 +485,27 @@ class ChatScreenViewModel(
                     dialogNegativeButtonText = null,
                     onNegativeButtonClick = null,
                 )
-
-            is ChatScreenUIEvent.UpdateChatFolder ->
+            }
+            is ChatScreenUIEvent.UpdateChatFolder -> {
                 appDB.updateChat(_uiState.value.chat.copy(folderId = event.newFolderId))
-
-            is ChatScreenUIEvent.AddFolder ->
+            }
+            is ChatScreenUIEvent.AddFolder -> {
                 appDB.addFolder(event.folderName)
-
-            is ChatScreenUIEvent.UpdateFolder ->
+            }
+            is ChatScreenUIEvent.UpdateFolder -> {
                 appDB.updateFolder(event.folder)
-
-            is ChatScreenUIEvent.DeleteFolder ->
+            }
+            is ChatScreenUIEvent.DeleteFolder -> {
                 appDB.deleteFolder(event.folderId)
-
-            is ChatScreenUIEvent.DeleteFolderWithChats ->
+            }
+            is ChatScreenUIEvent.DeleteFolderWithChats -> {
                 appDB.deleteFolderWithChats(event.folderId)
-
+            }
             is ChatScreenUIEvent.UpdateChatModel -> {
                 updateChatLLMParams(event.model.id, event.model.chatTemplate)
                 loadModel()
-                onEvent(ToggleSelectModelListDialog(visible = false))
+                onEvent(ChatScreenUIEvent.ToggleSelectModelListDialog(visible = false))
             }
-
             is ChatScreenUIEvent.DeleteModel -> {
                 deleteModel(event.model.id)
                 Toast.makeText(
@@ -611,15 +514,15 @@ class ChatScreenViewModel(
                     Toast.LENGTH_LONG,
                 ).show()
             }
-
-            ChatScreenUIEvent.LoadChatModel -> { /* no-op, handled by loadModel() */ }
-
-            is ChatScreenUIEvent.SendUserQuery ->
+            is ChatScreenUIEvent.LoadChatModel -> {
+                // no-op
+            }
+            is ChatScreenUIEvent.SendUserQuery -> {
                 sendUserQuery(event.query)
-
-            ChatScreenUIEvent.StopGeneration ->
+            }
+            is ChatScreenUIEvent.StopGeneration -> {
                 stopGeneration()
-
+            }
             is ChatScreenUIEvent.OnTaskSelected -> {
                 val model = modelsRepository.getModelFromId(event.task.modelId)
                 val newTask = appDB.addChat(
@@ -632,45 +535,34 @@ class ChatScreenViewModel(
                 switchChat(newTask)
                 onEvent(ChatScreenUIEvent.ToggleTaskListBottomList(visible = false))
             }
-
             is ChatScreenUIEvent.OnMessageEdited -> {
                 deleteMessage(event.oldMessage.id)
                 if (!event.lastMessage.isUserMessage) {
                     deleteMessage(event.lastMessage.id)
                 }
                 appDB.addUserMessage(event.chatId, event.newMessageText)
-                // Unload + reload sigur, cu callback după success
                 if (unloadModel()) {
                     loadModel(onComplete = { state ->
                         if (state == ModelLoadingState.SUCCESS) {
                             sendUserQuery(event.newMessageText, addMessageToDB = false)
                         }
                     })
-                } else {
-                    LOGD("OnMessageEdited: could not unload (inference running), skipping reload")
                 }
             }
-
-            is ChatScreenUIEvent.OnDeleteChat ->
+            is ChatScreenUIEvent.OnDeleteChat -> {
                 createAlertDialog(
                     dialogTitle = context.getString(R.string.dialog_title_delete_chat),
-                    dialogText = context.getString(
-                        R.string.dialog_text_delete_chat, event.chat.name
-                    ),
+                    dialogText = context.getString(R.string.dialog_text_delete_chat, event.chat.name),
                     dialogPositiveButtonText = context.getString(R.string.dialog_pos_delete),
                     dialogNegativeButtonText = context.getString(R.string.dialog_neg_cancel),
                     onPositiveButtonClick = {
                         deleteChat(event.chat)
-                        Toast.makeText(
-                            context,
-                            "Chat '${event.chat.name}' deleted",
-                            Toast.LENGTH_LONG,
-                        ).show()
+                        Toast.makeText(context, "Chat '${event.chat.name}' deleted", Toast.LENGTH_LONG).show()
                     },
                     onNegativeButtonClick = {},
                 )
-
-            is ChatScreenUIEvent.OnDeleteChatMessages ->
+            }
+            is ChatScreenUIEvent.OnDeleteChatMessages -> {
                 createAlertDialog(
                     dialogTitle = context.getString(R.string.chat_options_clear_messages),
                     dialogText = context.getString(R.string.chat_options_clear_messages_text),
@@ -681,43 +573,33 @@ class ChatScreenViewModel(
                         if (unloadModel()) {
                             loadModel(onComplete = { state ->
                                 if (state == ModelLoadingState.SUCCESS) {
-                                    Toast.makeText(
-                                        context,
-                                        "Chat '${event.chat.name}' cleared",
-                                        Toast.LENGTH_LONG,
-                                    ).show()
+                                    Toast.makeText(context, "Chat '${event.chat.name}' cleared", Toast.LENGTH_LONG).show()
                                 }
                             })
                         }
                     },
                     onNegativeButtonClick = {},
                 )
-
-            ChatScreenUIEvent.NewChat -> {
+            }
+            is ChatScreenUIEvent.NewChat -> {
                 val chatCount = appDB.getChatsCount()
                 val newChat = appDB.addChat(chatName = "Untitled ${chatCount + 1}")
                 switchChat(newChat)
             }
-
-            is ChatScreenUIEvent.SwitchChat ->
+            is ChatScreenUIEvent.SwitchChat -> {
                 switchChat(event.chat)
-
+            }
             is ChatScreenUIEvent.UpdateChatSettings -> {
                 val newChat = event.settings.toChat(event.existingChat)
                 _uiState.update { it.copy(chat = newChat) }
                 appDB.updateChat(newChat)
-                // Reîncarcă modelul NUMAI dacă parametrii de model s-au schimbat
-                // (unload + load sigur)
                 if (unloadModel()) {
                     loadModel()
-                } else {
-                    LOGD("UpdateChatSettings: inference running, settings will apply on next load")
                 }
             }
-
-            is ChatScreenUIEvent.StartBenchmark ->
+            is ChatScreenUIEvent.StartBenchmark -> {
                 smolLMManager.benchmark { result -> event.onResult(result) }
-
+            }
             is ChatScreenUIEvent.StartAudioTranscription -> {
                 _uiState.update {
                     it.copy(
@@ -755,7 +637,6 @@ class ChatScreenViewModel(
                     }
                 }
             }
-
             is ChatScreenUIEvent.StopAudioTranscription -> {
                 _uiState.update {
                     it.copy(
@@ -770,9 +651,9 @@ class ChatScreenViewModel(
         }
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
+    // -------------------------------------------------------------------------
     // PRIVATE HELPERS
-    // ─────────────────────────────────────────────────────────────────────────
+    // -------------------------------------------------------------------------
 
     private fun initializeUIState(): ChatScreenUIState {
         val defaultChat = appDB.loadDefaultChat()
@@ -827,8 +708,7 @@ class ChatScreenViewModel(
                             _uiState.update {
                                 it.copy(
                                     messages = chatMessages.map { chatMessage ->
-                                        chatMessage.renderedMessage =
-                                            mdRenderer.render(chatMessage.message)
+                                        chatMessage.renderedMessage = mdRenderer.render(chatMessage.message)
                                         chatMessage
                                     }.toImmutableList()
                                 )
@@ -844,9 +724,7 @@ class ChatScreenViewModel(
                         _uiState.update { uiState ->
                             uiState.copy(
                                 chat = uiState.chat.copy(
-                                    llmModel = modelsRepository.getModelFromId(
-                                        uiState.chat.llmModelId
-                                    )
+                                    llmModel = modelsRepository.getModelFromId(uiState.chat.llmModelId)
                                 )
                             )
                         }
