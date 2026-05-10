@@ -610,9 +610,6 @@ class ChatScreenViewModel(
         appDB.deleteMessage(messageId)
     }
 
-    // --- WEB SEARCH ---
-    // FIX: adăugat try/catch complet și limită de caractere (500) pentru a preveni
-    // prompt-uri prea mari care pot crăpa modelul
     private suspend fun searchWeb(query: String): String {
         return withContext(Dispatchers.IO) {
             try {
@@ -649,8 +646,6 @@ class ChatScreenViewModel(
                     var count = 0
                     for (i in 0 until relatedTopics.length()) {
                         if (count >= 3) break
-                        // FIX: unele elemente din RelatedTopics pot fi array-uri imbricate,
-                        // nu obiecte — optJSONObject returnează null în acel caz și continuăm
                         val topic = relatedTopics.optJSONObject(i) ?: continue
                         val text = topic.optString("Text", "")
                         if (text.isNotBlank()) {
@@ -684,15 +679,9 @@ class ChatScreenViewModel(
         _uiState.update { it.copy(isGeneratingResponse = true, renderedPartialResponse = null) }
 
         viewModelScope.launch {
-            // FIX: try/catch separat pentru searchWeb + limită 500 caractere
-            LOGD("Starting web search for: $query")
-            val webContext = try {
-                searchWeb(query).take(500)
-            } catch (e: Exception) {
-                LOGD("searchWeb outer exception: ${e.message}")
-                ""
-            }
-            LOGD("Web search done. Context length: ${webContext.length}")
+            // TEST: web search dezactivat temporar
+            // Dacă loop-ul dispare cu această linie, problema e în searchWeb()
+            val webContext = ""
 
             val finalQuery = if (webContext.isNotBlank()) {
                 "[Informații recente de pe internet]\n$webContext\n\n[Întrebarea utilizatorului]\n$query"
@@ -713,7 +702,7 @@ class ChatScreenViewModel(
                     _uiState.update { it.copy(renderedPartialResponse = mdRenderer.render(resp)) }
                 },
                 onSuccess = { response ->
-                    LOGD("Inference success. Speed: ${response.generationSpeed} tok/s")
+                    LOGD("Inference success")
                     val updatedChat = chat.copy(contextSizeConsumed = response.contextLengthUsed)
                     _uiState.update {
                         it.copy(
@@ -727,8 +716,6 @@ class ChatScreenViewModel(
                     }
                     appDB.updateChat(updatedChat)
                 },
-                // FIX: onCancelled era gol — isGeneratingResponse rămânea true la infinit
-                // provocând loop-ul de reload continuu
                 onCancelled = {
                     LOGD("Inference cancelled")
                     _uiState.update {
@@ -794,8 +781,6 @@ class ChatScreenViewModel(
         _uiState.update { it.copy(chat = newChat) }
     }
 
-    // FIX: availMem = memorie LIBERĂ, nu folosită
-    // Formula corectă: usedMemory = totalMem - availMem
     private fun getCurrentMemoryUsage(): Pair<Float, Float> {
         val memoryInfo = MemoryInfo()
         activityManager.getMemoryInfo(memoryInfo)
