@@ -611,6 +611,8 @@ class ChatScreenViewModel(
     }
 
     // --- WEB SEARCH ---
+    // FIX: adăugat try/catch complet și limită de caractere (500) pentru a preveni
+    // prompt-uri prea mari care pot crăpa modelul
     private suspend fun searchWeb(query: String): String {
         return withContext(Dispatchers.IO) {
             try {
@@ -623,6 +625,13 @@ class ChatScreenViewModel(
                 connection.setRequestProperty("User-Agent", "Mozilla/5.0")
                 connection.connectTimeout = 5000
                 connection.readTimeout = 5000
+
+                val responseCode = connection.responseCode
+                if (responseCode != 200) {
+                    LOGD("Web search HTTP error: $responseCode")
+                    connection.disconnect()
+                    return@withContext ""
+                }
 
                 val response = connection.inputStream.bufferedReader().readText()
                 connection.disconnect()
@@ -640,6 +649,8 @@ class ChatScreenViewModel(
                     var count = 0
                     for (i in 0 until relatedTopics.length()) {
                         if (count >= 3) break
+                        // FIX: unele elemente din RelatedTopics pot fi array-uri imbricate,
+                        // nu obiecte — optJSONObject returnează null în acel caz și continuăm
                         val topic = relatedTopics.optJSONObject(i) ?: continue
                         val text = topic.optString("Text", "")
                         if (text.isNotBlank()) {
@@ -673,12 +684,23 @@ class ChatScreenViewModel(
         _uiState.update { it.copy(isGeneratingResponse = true, renderedPartialResponse = null) }
 
         viewModelScope.launch {
-            val webContext = searchWeb(query)
+            // FIX: try/catch separat pentru searchWeb + limită 500 caractere
+            LOGD("Starting web search for: $query")
+            val webContext = try {
+                searchWeb(query).take(500)
+            } catch (e: Exception) {
+                LOGD("searchWeb outer exception: ${e.message}")
+                ""
+            }
+            LOGD("Web search done. Context length: ${webContext.length}")
+
             val finalQuery = if (webContext.isNotBlank()) {
                 "[Informații recente de pe internet]\n$webContext\n\n[Întrebarea utilizatorului]\n$query"
             } else {
                 query
             }
+
+            LOGD("Starting inference. Prompt length: ${finalQuery.length}")
 
             smolLMManager.getResponse(
                 finalQuery,
@@ -691,11 +713,13 @@ class ChatScreenViewModel(
                     _uiState.update { it.copy(renderedPartialResponse = mdRenderer.render(resp)) }
                 },
                 onSuccess = { response ->
+                    LOGD("Inference success. Speed: ${response.generationSpeed} tok/s")
                     val updatedChat = chat.copy(contextSizeConsumed = response.contextLengthUsed)
                     _uiState.update {
                         it.copy(
                             chat = updatedChat,
                             isGeneratingResponse = false,
+                            renderedPartialResponse = null,
                             responseGenerationsSpeed = response.generationSpeed,
                             responseGenerationTimeSecs = response.generationTimeSecs,
                             memoryUsage = if (it.memoryUsage != null) getCurrentMemoryUsage() else null,
@@ -703,15 +727,37 @@ class ChatScreenViewModel(
                     }
                     appDB.updateChat(updatedChat)
                 },
-                onCancelled = {},
+                // FIX: onCancelled era gol — isGeneratingResponse rămânea true la infinit
+                // provocând loop-ul de reload continuu
+                onCancelled = {
+                    LOGD("Inference cancelled")
+                    _uiState.update {
+                        it.copy(
+                            isGeneratingResponse = false,
+                            renderedPartialResponse = null
+                        )
+                    }
+                },
                 onError = { exception ->
-                    _uiState.update { it.copy(isGeneratingResponse = false) }
+                    LOGD("Inference error: ${exception.message}")
+                    _uiState.update {
+                        it.copy(
+                            isGeneratingResponse = false,
+                            renderedPartialResponse = null
+                        )
+                    }
                     createAlertDialog(
                         dialogTitle = "An error occurred",
                         dialogText = "The app is unable to process the query. The error message is: ${exception.message}",
                         dialogPositiveButtonText = "Change model",
-                        onPositiveButtonClick = {},
-                        dialogNegativeButtonText = "",
+                        onPositiveButtonClick = {
+                            onEvent(
+                                ChatScreenUIEvent.DialogEvents.ToggleSelectModelListDialog(
+                                    visible = true
+                                )
+                            )
+                        },
+                        dialogNegativeButtonText = "Close",
                         onNegativeButtonClick = {},
                     )
                 },
@@ -748,11 +794,13 @@ class ChatScreenViewModel(
         _uiState.update { it.copy(chat = newChat) }
     }
 
+    // FIX: availMem = memorie LIBERĂ, nu folosită
+    // Formula corectă: usedMemory = totalMem - availMem
     private fun getCurrentMemoryUsage(): Pair<Float, Float> {
         val memoryInfo = MemoryInfo()
         activityManager.getMemoryInfo(memoryInfo)
-        val totalMemory = (memoryInfo.totalMem) / 1024.0.pow(3.0)
-        val usedMemory = (memoryInfo.availMem) / 1024.0.pow(3.0)
+        val totalMemory = memoryInfo.totalMem / 1024.0.pow(3.0)
+        val usedMemory = (memoryInfo.totalMem - memoryInfo.availMem) / 1024.0.pow(3.0)
         return Pair(usedMemory.toFloat(), totalMemory.toFloat())
     }
 }
