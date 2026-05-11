@@ -36,6 +36,7 @@ import io.shubham0204.smollmandroid.data.SharedPrefStore
 import io.shubham0204.smollmandroid.data.Task
 import io.shubham0204.smollmandroid.llm.ModelsRepository
 import io.shubham0204.smollmandroid.llm.SmolLMManager
+import io.shubham0204.smollmandroid.llm.WebSearchService
 import io.shubham0204.smollmandroid.llm.speech2text.AudioTranscriptionService
 import io.shubham0204.smollmandroid.ui.components.createAlertDialog
 import io.shubham0204.smollmandroid.ui.screens.manage_asr.SETTING_DEF_VALUE_SPEECH2TEXT_CURR_MODEL_NAME
@@ -137,6 +138,7 @@ data class AudioTranscriptionUIState(
 data class ChatScreenUIState(
     val chat: Chat = Chat(),
     val isGeneratingResponse: Boolean = false,
+    val isSearchingWeb: Boolean = false,
     val renderedPartialResponse: Spanned? = null,
     val modelLoadingState: ChatScreenViewModel.ModelLoadingState =
         ChatScreenViewModel.ModelLoadingState.NOT_LOADED,
@@ -167,23 +169,20 @@ class ChatScreenViewModel(
     val sharedPrefStore: SharedPrefStore
 ) : ViewModel() {
     enum class ModelLoadingState {
-        NOT_LOADED, // model loading not started
-        IN_PROGRESS, // model loading in-progress
-        SUCCESS, // model loading finished successfully
-        FAILURE, // model loading failed
+        NOT_LOADED,
+        IN_PROGRESS,
+        SUCCESS,
+        FAILURE,
     }
 
     private val _uiState = MutableStateFlow(initializeUIState())
     val uiState: StateFlow<ChatScreenUIState> = _uiState
 
-    // Used to pre-set a value in the query text-field of the chat screen
-    // It is set when a query comes from a 'share-text' intent in ChatActivity
     var questionTextDefaultVal: String? = null
 
-    // regex to replace <think> tags with <blockquote>
-    // to render them correctly in Markdown
     private val findThinkTagRegex = Regex("<think>(.*?)</think>", RegexOption.DOT_MATCHES_ALL)
     private var activityManager: ActivityManager
+    private val webSearchService = WebSearchService()
 
     init {
         setupCollectors()
@@ -191,11 +190,6 @@ class ChatScreenViewModel(
         activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
     }
 
-    /**
-     * Load the model for the current chat. If chat is configured with a LLM (i.e. chat.llModelId !=
-     * -1), then load the model. If not, show the model list dialog. Once the model is finalized,
-     * read the system prompt and user messages from the database and add them to the model.
-     */
     fun loadModel(onComplete: (ModelLoadingState) -> Unit = {}) {
         val chat = _uiState.value.chat
         val model = modelsRepository.getModelFromId(chat.llmModelId)
@@ -253,7 +247,6 @@ class ChatScreenViewModel(
         }
     }
 
-    /** Clears the resources occupied by the model only if the inference is not in progress. */
     fun unloadModel(): Boolean =
         if (!smolLMManager.isInferenceOn) {
             smolLMManager.unload()
@@ -343,8 +336,7 @@ class ChatScreenViewModel(
                     context,
                     context.getString(R.string.chat_model_deleted, event.model.name),
                     Toast.LENGTH_LONG,
-                )
-                    .show()
+                ).show()
             }
 
             ChatScreenUIEvent.ChatEvents.LoadChatModel -> {}
@@ -358,8 +350,6 @@ class ChatScreenViewModel(
             }
 
             is ChatScreenUIEvent.ChatEvents.OnTaskSelected -> {
-                // Using parameters from the `task`
-                // create a `Chat` instance and switch to it
                 modelsRepository.getModelFromId(event.task.modelId).let { model ->
                     val newTask =
                         appDB.addChat(
@@ -377,15 +367,6 @@ class ChatScreenViewModel(
             }
 
             is ChatScreenUIEvent.ChatEvents.OnMessageEdited -> {
-                // viewModel.sendUserQuery will add a new message to the chat
-                // hence we delete the old message and the corresponding LLM
-                // response if there exists one
-                // TODO: There should be no need to unload/load the model again
-                //       as only the conversation messages have changed.
-                //       Currently there's no native function to edit the conversation
-                // messages
-                //       so unload (remove all messages) and load (add all messages) the
-                // model.
                 deleteMessage(event.oldMessage.id)
                 if (!event.lastMessage.isUserMessage) {
                     deleteMessage(event.lastMessage.id)
@@ -414,8 +395,7 @@ class ChatScreenViewModel(
                             context,
                             "Chat '${event.chat.name}' deleted",
                             Toast.LENGTH_LONG,
-                        )
-                            .show()
+                        ).show()
                     },
                     onNegativeButtonClick = {},
                 )
@@ -437,8 +417,7 @@ class ChatScreenViewModel(
                                         context,
                                         "Chat '${event.chat.name}' cleared",
                                         Toast.LENGTH_LONG,
-                                    )
-                                        .show()
+                                    ).show()
                                 }
                             }
                         )
@@ -482,23 +461,20 @@ class ChatScreenViewModel(
                     SETTING_KEY_SPEECH2TEXT_CURR_MODEL_NAME,
                     SETTING_DEF_VALUE_SPEECH2TEXT_CURR_MODEL_NAME
                 )
-                val asrModel = availableASRModels.first {
-                    it.name == asrModelName
-                }
+                val asrModel = availableASRModels.first { it.name == asrModelName }
                 val error =
                     audioTranscriptionService.startTranscription(asrModel) { transcription ->
-                    _uiState.update {
-                        it.copy(
-                            audioTranscriptionUIState = AudioTranscriptionUIState(
-                                false,
-                                isAvailable = true
+                        _uiState.update {
+                            it.copy(
+                                audioTranscriptionUIState = AudioTranscriptionUIState(
+                                    false,
+                                    isAvailable = true
+                                )
                             )
-                        )
+                        }
+                        event.onLineComplete(transcription)
                     }
-                    event.onLineComplete(transcription)
-                }
                 if (error is AudioTranscriptionService.Error.AudioRecordingPermissionNotGranted) {
-
                 }
             }
 
@@ -518,7 +494,6 @@ class ChatScreenViewModel(
 
     private fun initializeUIState(): ChatScreenUIState {
         val defaultChat = appDB.loadDefaultChat()
-
         val isSpeech2TextEnabled = sharedPrefStore.get(
             SETTING_KEY_SPEECH2TEXT_ENABLED,
             SETTING_DEF_VALUE_SPEECH2_TEXT_ENABLED
@@ -526,7 +501,6 @@ class ChatScreenViewModel(
         val audioTranscriptionUIState = AudioTranscriptionUIState(
             isAvailable = isSpeech2TextEnabled
         )
-
         return ChatScreenUIState(
             chat = defaultChat,
             audioTranscriptionUIState = audioTranscriptionUIState
@@ -549,15 +523,11 @@ class ChatScreenViewModel(
                 appDB.getTasks().collect { tasks ->
                     _uiState.update {
                         it.copy(
-                            tasks =
-                                tasks
-                                    .map { task ->
-                                        task.copy(
-                                            modelName =
-                                                modelsRepository.getModelFromId(task.modelId).name
-                                        )
-                                    }
-                                    .toImmutableList()
+                            tasks = tasks.map { task ->
+                                task.copy(
+                                    modelName = modelsRepository.getModelFromId(task.modelId).name
+                                )
+                            }.toImmutableList()
                         )
                     }
                 }
@@ -575,14 +545,11 @@ class ChatScreenViewModel(
                         appDB.getMessages(chat.id).collect { chatMessages ->
                             _uiState.update {
                                 it.copy(
-                                    messages =
-                                        chatMessages
-                                            .map { chatMessage ->
-                                                chatMessage.renderedMessage =
-                                                    mdRenderer.render(chatMessage.message)
-                                                chatMessage
-                                            }
-                                            .toImmutableList()
+                                    messages = chatMessages.map { chatMessage ->
+                                        chatMessage.renderedMessage =
+                                            mdRenderer.render(chatMessage.message)
+                                        chatMessage
+                                    }.toImmutableList()
                                 )
                             }
                         }
@@ -595,11 +562,9 @@ class ChatScreenViewModel(
                     .collectLatest { chat ->
                         _uiState.update { uiState ->
                             uiState.copy(
-                                chat =
-                                    uiState.chat.copy(
-                                        llmModel =
-                                            modelsRepository.getModelFromId(uiState.chat.llmModelId)
-                                    )
+                                chat = uiState.chat.copy(
+                                    llmModel = modelsRepository.getModelFromId(uiState.chat.llmModelId)
+                                )
                             )
                         }
                     }
@@ -648,68 +613,77 @@ class ChatScreenViewModel(
 
     private fun sendUserQuery(query: String, addMessageToDB: Boolean = true) {
         val chat = uiState.value.chat
-        // Update the 'dateUsed' attribute of the current Chat instance
-        // when a query is sent by the user
         chat.dateUsed = Date()
         appDB.updateChat(chat)
 
         if (chat.isTask) {
-            // If the chat is a 'task', delete all existing messages
-            // to maintain the 'stateless' nature of the task
             appDB.deleteMessages(chat.id)
         }
 
         if (addMessageToDB) {
             appDB.addUserMessage(chat.id, query)
         }
+
         _uiState.update { it.copy(isGeneratingResponse = true, renderedPartialResponse = null) }
-        smolLMManager.getResponse(
-            query,
-            responseTransform = {
-                // Replace <think> tags with <blockquote> tags
-                // to get a neat Markdown rendering
-                findThinkTagRegex.replace(it) { matchResult ->
-                    "<blockquote><i><h6>${matchResult.groupValues[1].trim()}</i></h6></blockquote>"
+
+        viewModelScope.launch {
+            // Dacă întrebarea necesită căutare web, facem search și injectăm rezultatele
+            val finalQuery = if (webSearchService.needsWebSearch(query)) {
+                _uiState.update { it.copy(isSearchingWeb = true) }
+                val searchResults = webSearchService.search(query)
+                _uiState.update { it.copy(isSearchingWeb = false) }
+                if (searchResults != null) {
+                    """
+                    [Informații găsite pe internet]:
+                    $searchResults
+                    
+                    Folosind informațiile de mai sus, răspunde la întrebarea utilizatorului:
+                    $query
+                    """.trimIndent()
+                } else {
+                    query
                 }
-            },
-            onPartialResponseGenerated = { resp ->
-                _uiState.update { it.copy(renderedPartialResponse = mdRenderer.render(resp)) }
-            },
-            onSuccess = { response ->
-                val updatedChat = chat.copy(contextSizeConsumed = response.contextLengthUsed)
-                _uiState.update {
-                    it.copy(
-                        chat = updatedChat,
-                        isGeneratingResponse = false,
-                        responseGenerationsSpeed = response.generationSpeed,
-                        responseGenerationTimeSecs = response.generationTimeSecs,
-                        memoryUsage =
-                            if (it.memoryUsage != null) {
-                                getCurrentMemoryUsage()
-                            } else {
-                                null
-                            },
+            } else {
+                query
+            }
+
+            smolLMManager.getResponse(
+                finalQuery,
+                responseTransform = {
+                    findThinkTagRegex.replace(it) { matchResult ->
+                        "<blockquote><i><h6>${matchResult.groupValues[1].trim()}</i></h6></blockquote>"
+                    }
+                },
+                onPartialResponseGenerated = { resp ->
+                    _uiState.update { it.copy(renderedPartialResponse = mdRenderer.render(resp)) }
+                },
+                onSuccess = { response ->
+                    val updatedChat = chat.copy(contextSizeConsumed = response.contextLengthUsed)
+                    _uiState.update {
+                        it.copy(
+                            chat = updatedChat,
+                            isGeneratingResponse = false,
+                            responseGenerationsSpeed = response.generationSpeed,
+                            responseGenerationTimeSecs = response.generationTimeSecs,
+                            memoryUsage = if (it.memoryUsage != null) getCurrentMemoryUsage() else null,
+                        )
+                    }
+                    appDB.updateChat(updatedChat)
+                },
+                onCancelled = {},
+                onError = { exception ->
+                    _uiState.update { it.copy(isGeneratingResponse = false) }
+                    createAlertDialog(
+                        dialogTitle = "An error occurred",
+                        dialogText = "Error: ${exception.message}",
+                        dialogPositiveButtonText = "Change model",
+                        onPositiveButtonClick = {},
+                        dialogNegativeButtonText = "",
+                        onNegativeButtonClick = {},
                     )
-                }
-                appDB.updateChat(updatedChat)
-            },
-            onCancelled = {
-                // ignore CancellationException, as it was called because
-                // `responseGenerationJob` was cancelled in the `stopGeneration` method
-            },
-            onError = { exception ->
-                _uiState.update { it.copy(isGeneratingResponse = false) }
-                createAlertDialog(
-                    dialogTitle = "An error occurred",
-                    dialogText =
-                        "The app is unable to process the query. The error message is: ${exception.message}",
-                    dialogPositiveButtonText = "Change model",
-                    onPositiveButtonClick = {},
-                    dialogNegativeButtonText = "",
-                    onNegativeButtonClick = {},
-                )
-            },
-        )
+                },
+            )
+        }
     }
 
     private fun stopGeneration() {
@@ -741,10 +715,6 @@ class ChatScreenViewModel(
         _uiState.update { it.copy(chat = newChat) }
     }
 
-    /**
-     * Get the current memory usage of the device. This method returns the memory consumed (in GBs)
-     * and the total memory available on the device (in GBs)
-     */
     private fun getCurrentMemoryUsage(): Pair<Float, Float> {
         val memoryInfo = MemoryInfo()
         activityManager.getMemoryInfo(memoryInfo)
