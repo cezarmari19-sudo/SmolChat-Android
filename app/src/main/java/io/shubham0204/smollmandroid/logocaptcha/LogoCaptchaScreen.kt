@@ -40,15 +40,20 @@ fun LogoCaptchaScreen(
 
     LaunchedEffect(Unit) { viewModel.init(ctx) }
 
+    // FIX: LaunchedEffect separat pentru LOCKED ca să nu pornească două coroutine
+    LaunchedEffect(state.phase) {
+        if (state.phase == CaptchaPhase.SUCCESS) {
+            onSuccess()
+        }
+    }
+
+    // FIX: coroutine separată doar pentru timer LOCKED
     LaunchedEffect(state.phase) {
         if (state.phase == CaptchaPhase.LOCKED) {
-            while (true) {
+            while (state.phase == CaptchaPhase.LOCKED) {
                 delay(1000)
                 viewModel.unlockIfReady(ctx)
             }
-        }
-        if (state.phase == CaptchaPhase.SUCCESS) {
-            onSuccess()
         }
     }
 
@@ -64,6 +69,7 @@ fun LogoCaptchaScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
+            // FIX: eliminat CaptchaPhase.CAPTCHA care nu există în enum
             when (state.phase) {
                 CaptchaPhase.ADMIN_SETUP -> AdminSetupPhase(
                     onImagesPicked = { uris -> viewModel.adminSaveImages(ctx, uris) }
@@ -85,7 +91,6 @@ fun LogoCaptchaScreen(
                 CaptchaPhase.SUCCESS -> {
                     // handled în LaunchedEffect
                 }
-                CaptchaPhase.CAPTCHA -> {}
             }
         }
 
@@ -103,13 +108,11 @@ fun LogoCaptchaScreen(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(0.dp)
             ) {
-                // Buton invizibil — doar zona tactilă
                 Text("", fontSize = 1.sp)
             }
         }
     }
 
-    // Dialog cod admin
     if (state.showAdminCodeDialog) {
         AdminCodeDialog(
             hasError = state.adminCodeError,
@@ -217,8 +220,9 @@ fun VerifyPhase(
     onSwap: (Int, Int) -> Unit,
     onVerify: () -> Boolean
 ) {
-    var message by remember { mutableStateOf("") }
-    var isError by remember { mutableStateOf(false) }
+    // FIX: message ținut în rememberSaveable ca să supraviețuiască recompoziției
+    var message by rememberSaveable { mutableStateOf("") }
+    var isError by rememberSaveable { mutableStateOf(false) }
 
     Text("Verificare zilnică", fontSize = 13.sp, color = Color(0xFF7C5CFC), fontWeight = FontWeight.Bold)
     Spacer(Modifier.height(8.dp))
@@ -290,7 +294,8 @@ fun DraggableLogoGrid(
     currentOrder: List<Int>,
     onSwap: (Int, Int) -> Unit
 ) {
-    val tilePositions = remember { mutableStateMapOf<Int, Pair<Float, Float>>() }
+    // FIX: salvăm și dimensiunea tilei, nu doar poziția
+    val tilePositions = remember { mutableStateMapOf<Int, Triple<Float, Float, Float>>() }
     var draggingIdx by remember { mutableStateOf<Int?>(null) }
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -308,7 +313,9 @@ fun DraggableLogoGrid(
                             .aspectRatio(1f)
                             .onGloballyPositioned { coords ->
                                 val p = coords.positionInWindow()
-                                tilePositions[pos] = Pair(p.x, p.y)
+                                // FIX: salvăm x, y și size reală a tilei
+                                val size = coords.size.width.toFloat()
+                                tilePositions[pos] = Triple(p.x, p.y, size)
                             }
                             .clip(RoundedCornerShape(14.dp))
                             .border(
@@ -325,10 +332,11 @@ fun DraggableLogoGrid(
                                     onDrag = { change, _ ->
                                         val x = change.position.x + (tilePositions[pos]?.first ?: 0f)
                                         val y = change.position.y + (tilePositions[pos]?.second ?: 0f)
-                                        val target = tilePositions.entries.firstOrNull { (idx, p) ->
+                                        // FIX: folosim size reală în loc de 300px hardcodat
+                                        val target = tilePositions.entries.firstOrNull { (idx, t) ->
                                             idx != pos &&
-                                            x > p.first && x < p.first + 300 &&
-                                            y > p.second && y < p.second + 300
+                                            x > t.first && x < t.first + t.third &&
+                                            y > t.second && y < t.second + t.third
                                         }?.key
                                         if (target != null) {
                                             onSwap(pos, target)
