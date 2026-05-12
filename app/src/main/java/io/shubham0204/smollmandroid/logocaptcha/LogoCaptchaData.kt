@@ -3,6 +3,8 @@ package io.shubham0204.smollmandroid.logocaptcha
 import android.content.Context
 import android.content.SharedPreferences
 import org.json.JSONArray
+import org.json.JSONException
+import java.io.File
 
 object LogoCaptchaData {
 
@@ -23,8 +25,16 @@ object LogoCaptchaData {
 
     fun getImagePaths(ctx: Context): List<String> {
         val raw = prefs(ctx).getString(KEY_IMAGES, null) ?: return emptyList()
-        val arr = JSONArray(raw)
-        return List(arr.length()) { arr.getString(it) }
+        return try {
+            val arr = JSONArray(raw)
+            // FIX: verificăm că fiecare fișier există încă pe disk
+            List(arr.length()) { arr.getString(it) }
+                .filter { path -> File(path).exists() }
+        } catch (e: JSONException) {
+            // FIX: dacă datele sunt corupte, returnăm listă goală în loc de crash
+            e.printStackTrace()
+            emptyList()
+        }
     }
 
     fun saveCorrectOrder(ctx: Context, order: List<Int>) {
@@ -34,8 +44,14 @@ object LogoCaptchaData {
 
     fun getCorrectOrder(ctx: Context): List<Int> {
         val raw = prefs(ctx).getString(KEY_ORDER, null) ?: return emptyList()
-        val arr = JSONArray(raw)
-        return List(arr.length()) { arr.getInt(it) }
+        return try {
+            val arr = JSONArray(raw)
+            List(arr.length()) { arr.getInt(it) }
+        } catch (e: JSONException) {
+            // FIX: date corupte → returnăm listă goală
+            e.printStackTrace()
+            emptyList()
+        }
     }
 
     fun saveLastVerified(ctx: Context) {
@@ -59,7 +75,16 @@ object LogoCaptchaData {
     fun getLockedUntil(ctx: Context): Long =
         prefs(ctx).getLong(KEY_LOCKED_UNTIL, 0L)
 
+    // FIX: resetAll acum șterge și fișierele de pe disk, nu doar din SharedPreferences
     fun resetAll(ctx: Context) {
+        val paths = getImagePaths(ctx)
+        paths.forEach { path ->
+            try {
+                File(path).delete()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
         prefs(ctx).edit().clear().apply()
     }
 }
