@@ -31,6 +31,11 @@ class LogoCaptchaViewModel : ViewModel() {
     private val _state = MutableStateFlow(CaptchaUIState())
     val state: StateFlow<CaptchaUIState> = _state
 
+    // FIX: parola mutată în companion object — mai ușor de schimbat
+    companion object {
+        private const val ADMIN_CODE = "Gduebdyueb"
+    }
+
     fun init(ctx: Context) {
         val paths = LogoCaptchaData.getImagePaths(ctx)
         val order = LogoCaptchaData.getCorrectOrder(ctx)
@@ -71,7 +76,7 @@ class LogoCaptchaViewModel : ViewModel() {
     }
 
     fun submitAdminCode(code: String) {
-        if (code == "Gduebdyueb") {
+        if (code == ADMIN_CODE) {
             _state.update { it.copy(showAdminCodeDialog = false, phase = CaptchaPhase.ADMIN_SETUP) }
         } else {
             _state.update { it.copy(adminCodeError = true) }
@@ -79,15 +84,23 @@ class LogoCaptchaViewModel : ViewModel() {
     }
 
     fun adminSaveImages(ctx: Context, uris: List<Uri>) {
-        val paths = uris.take(6).map { uri ->
-            val dest = File(
-                ctx.filesDir,
-                "logo_${System.currentTimeMillis()}_${uri.lastPathSegment?.takeLast(10)}.jpg"
-            )
-            ctx.contentResolver.openInputStream(uri)?.use { input ->
-                dest.outputStream().use { output -> input.copyTo(output) }
+        // FIX: validare URI + nume unic cu index ca să nu se suprapună
+        val paths = mutableListOf<String>()
+        uris.take(6).forEachIndexed { index, uri ->
+            try {
+                val dest = File(
+                    ctx.filesDir,
+                    "logo_${index}_${System.currentTimeMillis()}.jpg"
+                )
+                ctx.contentResolver.openInputStream(uri)?.use { input ->
+                    dest.outputStream().use { output -> input.copyTo(output) }
+                }
+                if (dest.exists() && dest.length() > 0) {
+                    paths.add(dest.absolutePath)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
-            dest.absolutePath
         }
         LogoCaptchaData.saveImagePaths(ctx, paths)
         _state.update {
@@ -145,7 +158,9 @@ class LogoCaptchaViewModel : ViewModel() {
         return isOk
     }
 
+    // FIX: guard ca să nu se apeleze dacă nu e în faza LOCKED
     fun unlockIfReady(ctx: Context) {
+        if (_state.value.phase != CaptchaPhase.LOCKED) return
         if (System.currentTimeMillis() > _state.value.lockedUntilMs) {
             LogoCaptchaData.setLockedUntil(ctx, 0L)
             val shuffled = _state.value.imagePaths.indices.toList().shuffled()
