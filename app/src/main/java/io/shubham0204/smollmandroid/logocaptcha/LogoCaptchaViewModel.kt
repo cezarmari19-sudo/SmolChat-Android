@@ -9,16 +9,15 @@ import kotlinx.coroutines.flow.update
 import java.io.File
 
 enum class CaptchaPhase {
-    CAPTCHA,       // verificare zilnică sau ziua 1
-    SET_ORDER,     // ziua 1 — user alege ordinea
-    VERIFY,        // zilele următoare
-    LOCKED,        // blocat 1 oră
-    SUCCESS,       // verificat cu succes
-    ADMIN_SETUP    // panoul admin (ascuns)
+    SET_ORDER,
+    VERIFY,
+    LOCKED,
+    SUCCESS,
+    ADMIN_SETUP
 }
 
 data class CaptchaUIState(
-    val phase: CaptchaPhase = CaptchaPhase.CAPTCHA,
+    val phase: CaptchaPhase = CaptchaPhase.SET_ORDER,
     val imagePaths: List<String> = emptyList(),
     val currentOrder: List<Int> = emptyList(),
     val attempts: Int = 0,
@@ -42,7 +41,7 @@ class LogoCaptchaViewModel : ViewModel() {
 
         val phase = when {
             lockedUntil > now -> CaptchaPhase.LOCKED
-            paths.isEmpty() -> CaptchaPhase.SET_ORDER  // nicio poză — trebuie admin setup
+            paths.isEmpty() -> CaptchaPhase.SET_ORDER
             order.isEmpty() -> CaptchaPhase.SET_ORDER
             now - lastVerified < 24 * 60 * 60 * 1000L -> CaptchaPhase.SUCCESS
             else -> CaptchaPhase.VERIFY
@@ -63,7 +62,6 @@ class LogoCaptchaViewModel : ViewModel() {
         }
     }
 
-    // Butonul ascuns de admin — arată dialogul cu cod
     fun onAdminButtonClick() {
         _state.update { it.copy(showAdminCodeDialog = true, adminCodeError = false) }
     }
