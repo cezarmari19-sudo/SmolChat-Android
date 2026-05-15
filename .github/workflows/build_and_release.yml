@@ -38,13 +38,9 @@ jobs:
           find app/src -name "*.kt" -exec sed -i 's/io\/shubham0204\/smollmandroid/ai\/Astran\/AstranAi/g' {} +
           find app/src -name "*.xml" -exec sed -i 's/io\.shubham0204\.smollmandroid/ai\.Astran\.AstranAi/g' {} +
           find app/src -name "*.xml" -exec sed -i 's/io\/shubham0204\/smollmandroid/ai\/Astran\/AstranAi/g' {} +
-          sed -i 's/io\.shubham0204\.smollmandroid/ai\.Astran\.AstranAi/g' app/build.gradle.kts
-          sed -i 's/io\.shubham0204\.smollmandroid/ai\.Astran\.AstranAi/g' smollm/build.gradle.kts 2>/dev/null || true
           mkdir -p app/src/main/java/ai/Astran/AstranAi
           cp -r app/src/main/java/io/shubham0204/smollmandroid/. app/src/main/java/ai/Astran/AstranAi/
           rm -rf app/src/main/java/io
-          echo "=== Verificare build.gradle.kts ==="
-          grep -n "applicationId\|namespace" app/build.gradle.kts
 
       - name: Build APK
         run: ./gradlew assembleDebug --stacktrace
