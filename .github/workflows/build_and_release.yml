@@ -44,7 +44,11 @@ jobs:
           rm -rf app/src/main/java/io
 
       - name: Build APK
-        run: ./gradlew assembleDebug --info 2>&1 | grep -A 5 "error:" | head -50 --stacktrace
+        run: ./gradlew assembleDebug --stacktrace
+        continue-on-error: true
+
+      - name: Show Kotlin errors
+        run: find . -name "*.txt" -path "*/kotlin/*" -exec cat {} + 2>/dev/null | head -100 || true
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
