@@ -1,72 +1,149 @@
-name: Build and Release Android APK
+plugins {
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
+    id("com.google.devtools.ksp")
+    kotlin("plugin.serialization") version "2.1.0"
+}
 
-on:
-  push:
-    tags:
-      - 'v*'
+android {
+    namespace = "ai.Astran.AstranAi"
+    compileSdk = 35
+    ndkVersion = "27.2.12479018"
 
-jobs:
-  build_and_release_apk:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          submodules: 'true'
+    defaultConfig {
+        applicationId = "ai.Astran.AstranAi"
+        minSdk = 26
+        targetSdk = 35
+        versionCode = 15
+        versionName = "15"
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v3
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-          cache: gradle
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
 
-      - name: Setup Android NDK
-        uses: nttld/setup-ndk@v1
-        id: setup-ndk
-        with:
-          ndk-version: r27c
-          add-to-path: true
-        env:
-          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+    signingConfigs {
+        create("release") {
+            storeFile = file("../keystore.jks")
+            storePassword = System.getenv("RELEASE_KEYSTORE_PASSWORD")
+            keyAlias = System.getenv("RELEASE_KEYSTORE_ALIAS")
+            keyPassword = System.getenv("RELEASE_KEY_PASSWORD")
+        }
+    }
 
-      - name: Decode keystore
-        env:
-          ENCODED_STRING: ${{ secrets.KEYSTORE_BASE_64 }}
-          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
-          RELEASE_KEYSTORE_ALIAS: ${{ secrets.RELEASE_KEYSTORE_ALIAS }}
-          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
-        run: |
-          echo $ENCODED_STRING > keystore-b64.txt
-          base64 -d keystore-b64.txt > keystore.jks
+    // https://gitlab.com/fdroid/fdroiddata/-/merge_requests/21563#note_2890971890
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = true
+    }
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
+    buildTypes {
+        getByName("release") {
+            isMinifyEnabled = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.getByName("release")
+        }
+    }
 
-      - name: Build APK
-        env:
-          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
-          RELEASE_KEYSTORE_ALIAS: ${{ secrets.RELEASE_KEYSTORE_ALIAS }}
-          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
-        run: ./gradlew assembleRelease --stacktrace
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+    buildFeatures {
+        compose = true
+    }
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+    }
+    applicationVariants.configureEach {
+        kotlin.sourceSets {
+            getByName(name) {
+                kotlin.srcDir("build/generated/ksp/$name/kotlin")
+            }
+        }
+    }
+    configurations {
+        create("cleanedAnnotations")
+        implementation {
+            exclude(group = "org.jetbrains", module = "annotations")
+        }
+    }
+}
 
-      - name: Create a release
-        uses: actions/create-release@v1
-        id: create_release
-        with:
-          tag_name: ${{ github.ref }}
-          release_name: ${{ github.ref }}
-          draft: false
-          prerelease: false
-          body_path: CHANGELOG.md
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
+ksp {
+    arg("KOIN_CONFIG_CHECK", "true")
+}
 
-      - name: Upload APK to release
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: app/build/outputs/apk/release/app-release.apk
-          asset_name: SmolChat_${{ github.ref_name }}.apk
-          asset_content_type: application/vnd.android.package-archive
+dependencies {
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.activity.compose)
+    implementation(platform(libs.androidx.compose.bom))
+    implementation(libs.androidx.ui)
+    implementation(libs.androidx.ui.graphics)
+    implementation(libs.androidx.ui.tooling.preview)
+    implementation(libs.androidx.material3)
+    implementation(libs.androidx.material3.icons.extended)
+    implementation(libs.androidx.compose.navigation)
+
+    implementation(project(":smollm"))
+    implementation(project(":hf-model-hub-api"))
+
+    // Koin: dependency injection
+    implementation(libs.koin.android)
+    implementation(libs.koin.annotations)
+    implementation(libs.koin.androidx.compose)
+    implementation(libs.androidx.ui.text.google.fonts)
+    ksp(libs.koin.ksp.compiler)
+
+    // compose-markdown: Markdown rendering in Compose
+    implementation("io.noties.markwon:core:4.6.2")
+    implementation("io.noties.markwon:ext-latex:4.6.2")
+    implementation("io.noties.markwon:ext-strikethrough:4.6.2")
+    implementation("io.noties.markwon:ext-tables:4.6.2")
+    implementation("io.noties.markwon:ext-tasklist:4.6.2")
+    implementation("io.noties.markwon:linkify:4.6.2")
+    implementation("io.noties.markwon:html:4.6.2")
+    implementation("io.noties.markwon:syntax-highlight:4.6.2")
+    implementation("io.noties:prism4j:2.0.0")
+    annotationProcessor("io.noties:prism4j-bundler:2.0.0")
+
+    // Jetpack Paging3: loading paged data for Compose
+    val pagingVersion = "3.3.5"
+    implementation("androidx.paging:paging-runtime:$pagingVersion")
+    implementation("androidx.paging:paging-compose:$pagingVersion")
+
+    // Android Room: Local persistence with SQLite
+    val roomVersion = "2.6.1"
+    implementation("androidx.room:room-runtime:$roomVersion")
+    ksp("androidx.room:room-compiler:$roomVersion")
+    implementation("androidx.room:room-ktx:$roomVersion")
+
+    // compose-icons: Feather icons pack
+    // https://github.com/DevSrSouza/compose-icons
+    implementation(libs.composeIcons.feather)
+
+    // Serialization for typed navigation routes
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+
+    // Kotlin Immutable Collections
+    implementation("org.jetbrains.kotlinx:kotlinx-collections-immutable:0.4.0")
+
+    // moonshine-ai for speech recognition
+    implementation(libs.moonshine.voice)
+
+    implementation("com.github.khushpanchal:Ketch:2.0.5")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    testImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.espresso.core)
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.ui.test.junit4)
+    debugImplementation(libs.androidx.ui.tooling)
+    debugImplementation(libs.androidx.ui.test.manifest)
+}
