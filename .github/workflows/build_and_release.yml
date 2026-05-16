@@ -44,7 +44,6 @@ jobs:
 
       - name: Build APK
         run: ./gradlew assembleDebug --info 2>&1 | tail -200
-        continue-on-error: true
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
