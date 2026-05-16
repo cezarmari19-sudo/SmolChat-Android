@@ -18,7 +18,7 @@ jobs:
           xargs sed -i \
             -e 's/^package io\./package ai./g' \
             -e 's/^import io\.github\.shubham0204/import ai.github.Astran/g' \
-            -e '"io\.github\.shubham0204/"ai.github.Astran/g' \
+            -e 's/"io\.github\.shubham0204/"ai.github.Astran/g' \
             -e 's/shubham0204/Astran/g' \
             -e 's/smollmandroid/AstranAi/g'
           find . -type d -name "shubham0204" | while read dir; do
