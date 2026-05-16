@@ -59,8 +59,8 @@ jobs:
             app/src --include="*.kt" --include="*.xml" \
             app/build.gradle || echo "Nicio referință veche găsită"
 
-      - name: Build APK
-        run: ./gradlew assembleDebug --stacktrace
+      - - name: Build APK
+  run: ./gradlew assembleDebug --stacktrace --info 2>&1 | grep -A 5 "error:" --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
