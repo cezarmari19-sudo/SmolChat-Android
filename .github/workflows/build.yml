@@ -11,21 +11,41 @@ jobs:
       - uses: actions/checkout@v3
         with:
           submodules: 'true'
+
+      - name: Rename package identifiers
+        run: |
+          find . -type f \( -name "*.kt" -o -name "*.xml" -o -name "*.gradle" -o -name "*.gradle.kts" \) | \
+          xargs sed -i \
+            -e 's/io\.github/ai\.github/g' \
+            -e 's/shubham0204/Astran/g' \
+            -e 's/[Ss]mol[Ll][Mm]android/AstranAi/g' \
+            -e 's/[Ss]mol[Cc]hat/AstranAi/g'
+          find . -type d -name "shubham0204" | while read dir; do
+            mv "$dir" "${dir/shubham0204/Astran}"
+          done
+          find . -type d -iname "smollmandroid" | while read dir; do
+            mv "$dir" "${dir/smollmandroid/AstranAi}"
+          done
+
       - name: Set up JDK 17
         uses: actions/setup-java@v3
         with:
           java-version: '17'
           distribution: 'temurin'
           cache: gradle
+
       - name: Setup Android NDK
         uses: nttld/setup-ndk@v1
         with:
           ndk-version: r27c
           add-to-path: true
+
       - name: Grant execute permission
         run: chmod +x gradlew
+
       - name: Build APK
         run: ./gradlew assembleDebug
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
