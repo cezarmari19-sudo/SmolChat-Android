@@ -37,17 +37,13 @@ jobs:
           find app/src -name "*.kt" -exec sed -i 's/io\.shubham0204\.smollmandroid/ai\.Astran\.AstranAi/g' {} +
           find app/src -name "*.kt" -exec sed -i 's/io\/shubham0204\/smollmandroid/ai\/Astran\/AstranAi/g' {} +
           find app/src -name "*.xml" -exec sed -i 's/io\.shubham0204\.smollmandroid/ai\.Astran\.AstranAi/g' {} +
-          find app/src -name "*.xml" -exec sed -i 's/io\/shubham0204\/smollmandroid/ai\/Astran\/AstranAi/g' {} +
           mkdir -p app/src/main/java/ai/Astran/AstranAi
           cp -r app/src/main/java/io/shubham0204/smollmandroid/. app/src/main/java/ai/Astran/AstranAi/
           rm -rf app/src/main/java/io
 
       - name: Build APK
-        run: ./gradlew assembleDebug --stacktrace
+        run: ./gradlew assembleDebug --info 2>&1 | tail -200
         continue-on-error: true
-
-      - name: Show Kotlin errors
-        run: find . -name "*.txt" -path "*/kotlin/*" -exec cat {} + 2>/dev/null | head -100 || true
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
