@@ -1,84 +1,25 @@
-name: Build and Release Android APK
+- name: Rename package to AstranAI
+  run: |
+    # 1. Înlocuiește în conținutul fișierelor
+    find app/src -name "*.kt" -o -name "*.xml" | xargs sed -i \
+      -e 's/io\.shubham0204\.smollmandroid/ai\.Astran\.AstranAi/g' \
+      -e 's/io\/shubham0204\/smollmandroid/ai\/Astran\/AstranAi/g'
 
-on:
-  push:
-    branches:
-      - main
+    # 2. Înlocuiește în build.gradle și AndroidManifest
+    sed -i \
+      -e 's/io\.shubham0204\.smollmandroid/ai\.Astran\.AstranAi/g' \
+      app/build.gradle app/src/main/AndroidManifest.xml
 
-jobs:
-  build_and_release_apk:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: 'true'
+    # 3. Mută fișierele la noua cale
+    mkdir -p app/src/main/java/ai/Astran/AstranAi
+    cp -r app/src/main/java/io/shubham0204/smollmandroid/. \
+          app/src/main/java/ai/Astran/AstranAi/
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-          cache: gradle
+    # 4. Șterge directorul vechi (DUPĂ copiere)
+    rm -rf app/src/main/java/io/shubham0204
 
-      - name: Setup Android NDK
-        uses: nttld/setup-ndk@v1
-        id: setup-ndk
-        with:
-          ndk-version: r27c
-          add-to-path: true
-
-      - name: Set NDK environment variable
-        run: echo "ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}" >> $GITHUB_ENV
-
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
-
-      - name: Rename package to AstranAI
-        run: |
-          OLD_PKG="io\.shubham0204\.smollmandroid"
-          NEW_PKG="ai\.Astran\.AstranAi"
-          OLD_PATH="io/shubham0204/smollmandroid"
-          NEW_PATH="ai/Astran/AstranAi"
-
-          # Înlocuiește în fișiere .kt
-          find app/src -name "*.kt" -exec sed -i \
-            -e "s/${OLD_PKG}/${NEW_PKG}/g" \
-            -e "s/${OLD_PATH}/${NEW_PATH}/g" {} +
-
-          # Înlocuiește în fișiere .xml
-          find app/src -name "*.xml" -exec sed -i \
-            -e "s/${OLD_PKG}/${NEW_PKG}/g" \
-            -e "s/${OLD_PATH}/${NEW_PATH}/g" {} +
-
-          # Înlocuiește în AndroidManifest.xml
-          sed -i \
-            -e "s/${OLD_PKG}/${NEW_PKG}/g" \
-            -e "s/${OLD_PATH}/${NEW_PATH}/g" \
-            app/src/main/AndroidManifest.xml
-
-          # Înlocuiește în build.gradle (app)
-          sed -i \
-            -e "s/${OLD_PKG}/${NEW_PKG}/g" \
-            -e "s/${OLD_PATH}/${NEW_PATH}/g" \
-            app/build.gradle
-
-          # Mută fișierele în noul director de pachete
-          mkdir -p app/src/main/java/ai/Astran/AstranAi
-          cp -r app/src/main/java/io/shubham0204/smollmandroid/. \
-                app/src/main/java/ai/Astran/AstranAi/
-
-          # Șterge doar directorul vechi specific, nu tot io/
-          rm -rf app/src/main/java/io/shubham0204
-
-          # Verificare
-          echo "=== Verificare pachete rămase cu numele vechi ==="
-          grep -r "shubham0204\|smollmandroid" app/src --include="*.kt" --include="*.xml" || echo "OK - nicio referință veche găsită"
-
-      - name: Build APK
-        run: ./gradlew assembleDebug --stacktrace
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: AstranAI-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+    # 5. Verificare
+    echo "=== Referințe vechi rămase ==="
+    grep -r "shubham0204\|smollmandroid" \
+      app/src --include="*.kt" --include="*.xml" \
+      app/build.gradle || echo "Nicio referință veche găsită"
