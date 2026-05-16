@@ -37,6 +37,7 @@ jobs:
           find app/src -name "*.kt" -exec sed -i 's/io\.shubham0204\.smollmandroid/ai\.Astran\.AstranAi/g' {} +
           find app/src -name "*.kt" -exec sed -i 's/io\/shubham0204\/smollmandroid/ai\/Astran\/AstranAi/g' {} +
           find app/src -name "*.xml" -exec sed -i 's/io\.shubham0204\.smollmandroid/ai\.Astran\.AstranAi/g' {} +
+          find app/src -name "*.xml" -exec sed -i 's/io\/shubham0204\/smollmandroid/ai\/Astran\/AstranAi/g' {} +
           mkdir -p app/src/main/java/ai/Astran/AstranAi
           cp -r app/src/main/java/io/shubham0204/smollmandroid/. app/src/main/java/ai/Astran/AstranAi/
           rm -rf app/src/main/java/io
