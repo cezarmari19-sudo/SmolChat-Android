@@ -7,12 +7,12 @@ plugins {
 }
 
 android {
-    namespace = "ai.Astran.AstranAi"
+    namespace = "io.github.shubham0204.smollmandroid"
     compileSdk = 35
     ndkVersion = "27.2.12479018"
 
     defaultConfig {
-        applicationId = "ai.Astran.AstranAi"
+        applicationId = "io.github.shubham0204.smollmandroid"
         minSdk = 26
         targetSdk = 35
         versionCode = 15
@@ -30,7 +30,6 @@ android {
         }
     }
 
-    // https://gitlab.com/fdroid/fdroiddata/-/merge_requests/21563#note_2890971890
     dependenciesInfo {
         includeInApk = false
         includeInBundle = true
@@ -93,14 +92,12 @@ dependencies {
     implementation(project(":smollm"))
     implementation(project(":hf-model-hub-api"))
 
-    // Koin: dependency injection
     implementation(libs.koin.android)
     implementation(libs.koin.annotations)
     implementation(libs.koin.androidx.compose)
     implementation(libs.androidx.ui.text.google.fonts)
     ksp(libs.koin.ksp.compiler)
 
-    // compose-markdown: Markdown rendering in Compose
     implementation("io.noties.markwon:core:4.6.2")
     implementation("io.noties.markwon:ext-latex:4.6.2")
     implementation("io.noties.markwon:ext-strikethrough:4.6.2")
@@ -112,28 +109,20 @@ dependencies {
     implementation("io.noties:prism4j:2.0.0")
     annotationProcessor("io.noties:prism4j-bundler:2.0.0")
 
-    // Jetpack Paging3: loading paged data for Compose
     val pagingVersion = "3.3.5"
     implementation("androidx.paging:paging-runtime:$pagingVersion")
     implementation("androidx.paging:paging-compose:$pagingVersion")
 
-    // Android Room: Local persistence with SQLite
     val roomVersion = "2.6.1"
     implementation("androidx.room:room-runtime:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
 
-    // compose-icons: Feather icons pack
-    // https://github.com/DevSrSouza/compose-icons
     implementation(libs.composeIcons.feather)
 
-    // Serialization for typed navigation routes
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
-
-    // Kotlin Immutable Collections
     implementation("org.jetbrains.kotlinx:kotlinx-collections-immutable:0.4.0")
 
-    // moonshine-ai for speech recognition
     implementation(libs.moonshine.voice)
 
     implementation("com.github.khushpanchal:Ketch:2.0.5")
