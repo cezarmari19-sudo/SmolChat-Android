@@ -1,9 +1,11 @@
 name: Build Debug APK
+
 on:
   push:
     branches:
       - main
   workflow_dispatch:
+
 jobs:
   build_apk:
     runs-on: ubuntu-latest
@@ -45,9 +47,11 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build APK
-        run: ./gradlew assembleDebug --stacktrace 2>&1 | grep -A 5 "error:" | head -50
+        run: ./gradlew assembleDebug --stacktrace  # ← fără pipe/grep
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug.apk
+          name: AstranAi-debug
           path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error  # ← eșuează clar dacă APK-ul lipsește
